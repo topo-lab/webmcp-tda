@@ -29,7 +29,7 @@ const fakeResult: ComputeResult = {
 };
 
 describe('WebMCP tool contract', () => {
-  it('exposes only the four agent-focused tools', () => {
+  it('exposes four tools that complement the human workbench', () => {
     const backend: ComputeBackend = { run: vi.fn().mockResolvedValue(fakeResult) };
     const tools = createWebMcpTools(new TdaRuntime(backend));
     expect(tools.map((tool) => tool.name)).toEqual([

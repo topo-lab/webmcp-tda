@@ -1,8 +1,16 @@
 # WebMCP TDA
 
-WebMCP TDA turns a browser tab into a local computational-topology tool server for AI agents. It exposes one-parameter persistent homology for several simplicial-complex constructions and 2D cubical persistence for images. Computation stays in the browser through WebAssembly and Web Workers.
+WebMCP TDA is a shared computational-topology workbench for people and their agents. People can explore examples, configure filtrations, upload images, run one-parameter persistent homology, and inspect visual results directly in the page. A WebMCP-aware agent can use the same calculations and update the same visible workspace. Computation stays in the browser through WebAssembly and Web Workers.
 
 This is a dedicated WebMCP project. It is not the TDA Explorer and contains no lessons or tutorial flow.
+
+## Human workbench
+
+- Explore built-in 2D and 3D point-cloud examples with a live preview.
+- Choose among nine simplicial-complex constructions and edit their relevant parameters through structured controls.
+- Paste exact point coordinates when needed without making raw JSON the default experience.
+- Analyze built-in or uploaded images with sublevel or superlevel cubical filtrations.
+- Read feature counts, essential classes, H1 loops, runtime, a persistence diagram, a plain-language result summary, and the complete structured result.
 
 ## Agent tools
 
@@ -11,7 +19,7 @@ This is a dedicated WebMCP project. It is not the TDA Explorer and contains no l
 - `tda_compute_cubical_persistence` — compute vertex lower-star cubical persistence from the current uploaded image, a built-in sample, or a supplied scalar grid.
 - `tda_get_latest_result` — read the latest result shared by the human and agent.
 
-Tool calls update the same compact console the human sees. Tool registration follows the current draft WebMCP API (`document.modelContext.registerTool`) and is automatically removed through an `AbortSignal` when the page unloads.
+Tool calls synchronize their inputs and results back into the human workbench. Tool registration follows the current draft WebMCP API (`document.modelContext.registerTool`) and is automatically removed through an `AbortSignal` when the page unloads.
 
 Agent-controlled inputs are bounded by coordinate, point, image, and worst-case simplex budgets. Cancelling a running WebMCP computation terminates its Worker and starts queued work in a fresh Worker, so one expensive request cannot permanently wedge the tool service.
 
@@ -24,7 +32,7 @@ npm install
 npm run dev
 ```
 
-Open `http://127.0.0.1:5180`. A standard browser can use the manual console; a WebMCP-enabled browser also discovers the four tools above.
+Open `http://127.0.0.1:5180`. A standard browser gets the complete visual workbench; a WebMCP-enabled browser also discovers the four tools above.
 
 ```bash
 npm test
