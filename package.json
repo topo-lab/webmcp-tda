@@ -13,9 +13,15 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "playcanvas": "^2.21.4",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tda-viz-react": "file:../tda-viz-react",
     "tda-wasm": "file:vendor/tda-wasm"
   },
   "devDependencies": {
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
     "typescript": "^5.9.2",
     "vite": "^7.1.3",
     "vitest": "^3.2.4"

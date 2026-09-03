@@ -7,10 +7,11 @@ import { createWebMcpTools } from './webmcp/tools';
 const root = document.querySelector<HTMLElement>('#app');
 if (!root) throw new Error('Missing #app root.');
 
-mountApp(root);
+const unmountApp = mountApp(root);
 const unregisterTools = registerWebMcpTools(createWebMcpTools());
 
 window.addEventListener('beforeunload', () => {
+  unmountApp();
   unregisterTools();
   computeClient.dispose();
 }, { once: true });

@@ -56,6 +56,12 @@ export interface CubicalRequest {
   width?: number;
   height?: number;
   values?: number[];
+  /** Binarize the scalar image before building the cubical filtration. Defaults to true. */
+  binarize?: boolean;
+  /** Gray-level cutoff in [0, 255]. Omit to use Otsu's automatic threshold. */
+  threshold?: number;
+  /** Which side of the threshold represents the object and enters the filtration first. */
+  foreground?: 'dark' | 'light';
   filtration?: 'sublevel' | 'superlevel';
   downsample?: 1 | 2 | 4;
   resultLimit?: number;
@@ -105,6 +111,9 @@ export interface CubicalResult {
     name: string;
     width: number;
     height: number;
+    binarized: boolean;
+    threshold: number | null;
+    foreground: 'dark' | 'light' | null;
     filtration: 'sublevel' | 'superlevel';
     downsample: 1 | 2 | 4;
   };

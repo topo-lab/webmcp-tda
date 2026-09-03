@@ -147,6 +147,12 @@ export function validateCubicalRequest(input: CubicalRequest): CubicalRequest {
   if (source === 'sample' && !['ring', 'two-rings', 'two-blobs'].includes(input.sample ?? '')) {
     throw new Error('sample must be ring, two-rings, or two-blobs.');
   }
+  if (input.threshold !== undefined && (!Number.isFinite(input.threshold) || input.threshold < 0 || input.threshold > 255)) {
+    throw new Error('threshold must be a finite number between 0 and 255.');
+  }
+  if (input.foreground !== undefined && input.foreground !== 'dark' && input.foreground !== 'light') {
+    throw new Error('foreground must be dark or light.');
+  }
   const resultLimit = input.resultLimit ?? 50;
   if (!Number.isInteger(resultLimit) || resultLimit < 1 || resultLimit > 200) {
     throw new Error('resultLimit must be an integer between 1 and 200.');

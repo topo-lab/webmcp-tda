@@ -1,6 +1,7 @@
-import { getWorkspaceState, subscribeWorkspace, updateWorkspace, type WorkspaceState } from '../state';
+import { getWorkspaceState, subscribeWorkspace, updateWorkspace } from '../state';
 import { CAPABILITIES } from '../tda/capabilities';
 import { imageSample, POINT_SAMPLE_IDS, pointSample, type PointSampleId } from '../tda/samples';
+import { binarizeImage, closeBinaryImage, gaussianBlurImage, otsuThreshold, type ForegroundPolarity } from '../tda/imageProcessing';
 import { tdaRuntime } from '../tda/runtime';
 import type {
   ComplexKind,
@@ -8,7 +9,9 @@ import type {
   ComputeResult,
   CubicalRequest,
   SerializablePair,
+  ScalarImage,
 } from '../tda/types';
+import { mountPointCloudVisualization } from './pointCloudVisualization';
 
 const PARAMETER_DEFAULTS: Record<ComplexKind, ComplexParameters> = {
   rips: { maxEdgeLength: 0.7, maxSimplexDimension: 2 },
@@ -112,14 +115,13 @@ function escapeAttribute(value: unknown): string {
   return String(value).replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }
 
-function drawImage(canvas: HTMLCanvasElement, state: WorkspaceState): void {
-  const { currentImage } = state;
-  canvas.width = currentImage.width;
-  canvas.height = currentImage.height;
+function drawImage(canvas: HTMLCanvasElement, image: ScalarImage): void {
+  canvas.width = image.width;
+  canvas.height = image.height;
   const context = canvas.getContext('2d');
   if (!context) return;
-  const pixels = context.createImageData(currentImage.width, currentImage.height);
-  currentImage.values.forEach((value, index) => {
+  const pixels = context.createImageData(image.width, image.height);
+  image.values.forEach((value, index) => {
     const shade = Math.max(0, Math.min(255, Math.round(value)));
     const offset = index * 4;
     pixels.data[offset] = shade;
@@ -128,45 +130,6 @@ function drawImage(canvas: HTMLCanvasElement, state: WorkspaceState): void {
     pixels.data[offset + 3] = 255;
   });
   context.putImageData(pixels, 0, 0);
-}
-
-function drawPointCloud(canvas: HTMLCanvasElement, points: number[][]): void {
-  const context = canvas.getContext('2d');
-  if (!context) return;
-  const { width, height } = canvas;
-  context.fillStyle = '#0b2531';
-  context.fillRect(0, 0, width, height);
-  context.strokeStyle = 'rgba(157, 182, 189, .11)';
-  context.lineWidth = 1;
-  for (let step = 1; step < 8; step += 1) {
-    const x = (width / 8) * step;
-    const y = (height / 8) * step;
-    context.beginPath(); context.moveTo(x, 0); context.lineTo(x, height); context.stroke();
-    context.beginPath(); context.moveTo(0, y); context.lineTo(width, y); context.stroke();
-  }
-  if (points.length === 0) return;
-  const projected = points.map(([x = 0, y = 0, z = 0]) => [x + z * 0.32, y - z * 0.18]);
-  const xs = projected.map(([x]) => x!);
-  const ys = projected.map(([, y]) => y!);
-  const minX = Math.min(...xs); const maxX = Math.max(...xs);
-  const minY = Math.min(...ys); const maxY = Math.max(...ys);
-  const span = Math.max(maxX - minX, maxY - minY, 0.2);
-  const scale = Math.min((width - 76) / span, (height - 76) / span);
-  const centerX = (minX + maxX) / 2;
-  const centerY = (minY + maxY) / 2;
-  projected.forEach(([x, y]) => {
-    const px = width / 2 + (x! - centerX) * scale;
-    const py = height / 2 - (y! - centerY) * scale;
-    context.shadowColor = 'rgba(90, 200, 232, .5)';
-    context.shadowBlur = 9;
-    context.fillStyle = '#eefaff';
-    context.beginPath();
-    context.arc(px, py, 4.2, 0, Math.PI * 2);
-    context.fill();
-    context.shadowBlur = 0;
-    context.strokeStyle = '#5ac8e8';
-    context.stroke();
-  });
 }
 
 function drawDiagram(canvas: HTMLCanvasElement, pairs: SerializablePair[]): void {
@@ -229,8 +192,12 @@ function drawDiagram(canvas: HTMLCanvasElement, pairs: SerializablePair[]): void
   });
 }
 
-async function loadImageFile(file: File): Promise<void> {
-  const bitmap = await createImageBitmap(file);
+async function loadImageSource(source: Blob | string, name: string): Promise<ScalarImage> {
+  const blob = typeof source === 'string' ? await fetch(source).then((response) => {
+    if (!response.ok) throw new Error(`Could not load ${name}.`);
+    return response.blob();
+  }) : source;
+  const bitmap = await createImageBitmap(blob);
   const scale = Math.min(1, 256 / Math.max(bitmap.width, bitmap.height));
   const width = Math.max(2, Math.round(bitmap.width * scale));
   const height = Math.max(2, Math.round(bitmap.height * scale));
@@ -246,7 +213,7 @@ async function loadImageFile(file: File): Promise<void> {
   for (let index = 0; index < rgba.length; index += 4) {
     values.push(0.2126 * rgba[index]! + 0.7152 * rgba[index + 1]! + 0.0722 * rgba[index + 2]!);
   }
-  updateWorkspace({ currentImage: { name: file.name, width, height, values }, activity: `Loaded ${file.name}.` });
+  return { name, width, height, values };
 }
 
 function metricValue(value: number): string {
@@ -274,10 +241,13 @@ function resultDescription(result: ComputeResult): string {
     const base = `${COMPLEX_LABELS[result.complex]} on ${result.input.pointCount} ${result.input.dimension}D points produced ${metricValue(result.complexSummary.simplexCount)} simplices.`;
     return result.interpretation.warning ? `${base} ${result.interpretation.warning}` : base;
   }
-  return `${result.input.name} was analyzed as a ${result.input.width} × ${result.input.height} ${result.input.filtration} cubical filtration over F2.`;
+  const preprocessing = result.input.binarized
+    ? `It was segmented at gray level ${result.input.threshold} with ${result.input.foreground} pixels as foreground.`
+    : 'Its grayscale values were used directly.';
+  return `${result.input.name} was analyzed as a ${result.input.width} × ${result.input.height} ${result.input.filtration} cubical filtration over F2. ${preprocessing}`;
 }
 
-export function mountApp(root: HTMLElement): void {
+export function mountApp(root: HTMLElement): () => void {
   root.innerHTML = `
     <header class="masthead">
       <a class="wordmark" href="#top" aria-label="WebMCP TDA home"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span class="brand-copy">topolab <b>WebMCP TDA</b></span></a>
@@ -326,7 +296,8 @@ export function mountApp(root: HTMLElement): void {
               <p id="complex-note" class="context-note"></p>
               <figure class="data-stage">
                 <figcaption><span>Point-cloud preview</span><strong id="point-meta">32 points · 2D</strong></figcaption>
-                <canvas id="point-preview" width="720" height="380" aria-label="Point-cloud preview"></canvas>
+                <div id="point-preview" class="point-cloud-stage" role="img" aria-label="Interactive point-cloud preview"></div>
+                <div id="point-interaction" class="stage-hint" hidden>Drag to rotate · scroll to zoom</div>
               </figure>
               <div class="parameter-heading"><div><h3>Filtration settings</h3><p>Only parameters used by the selected complex are shown.</p></div></div>
               <div id="parameter-fields" class="parameter-grid"></div>
@@ -340,15 +311,28 @@ export function mountApp(root: HTMLElement): void {
 
             <form id="cubical-panel" class="input-form" role="tabpanel" aria-label="Cubical persistence controls" hidden>
               <div class="control-grid control-grid--three">
-                <label>Example image<select id="image-sample"><option value="ring">Ring</option><option value="two-rings">Two rings</option><option value="two-blobs">Two blobs</option><option value="custom">Custom / agent image</option></select></label>
-                <label>Filtration<select id="filtration"><option value="sublevel">Sublevel · dark first</option><option value="superlevel">Superlevel · light first</option></select></label>
-                <label>Downsample<select id="downsample"><option value="1">1× · full resolution</option><option value="2">2× · faster</option><option value="4">4× · fastest</option></select></label>
+                <label>Example image<select id="image-sample"><option value="donut">Chocolate doughnut photo</option><option value="ring">Ring mask</option><option value="two-rings">Two rings mask</option><option value="two-blobs">Two blobs mask</option><option value="custom">Custom / agent image</option></select></label>
+                <label>Filtration<select id="filtration"><option value="sublevel">Sublevel · foreground first</option><option value="superlevel">Superlevel · background first</option></select></label>
+                <label>Downsample<select id="downsample"><option value="1">1× · full resolution</option><option value="2" selected>2× · faster</option><option value="4">4× · fastest</option></select></label>
               </div>
               <figure class="data-stage image-stage">
-                <figcaption><span>Scalar-image preview</span><strong id="image-meta">ring · 64 × 64</strong></figcaption>
-                <div class="image-stage__body"><canvas id="image-preview" aria-label="Current grayscale image"></canvas><div class="image-copy"><h3>Bring your own image</h3><p>Color images are converted to grayscale and resized to a maximum of 256 × 256 in this tab.</p><label class="upload-button" for="image-file">Choose an image</label><input id="image-file" class="visually-hidden" type="file" accept="image/*"></div></div>
+                <figcaption><span>Image-to-topology pipeline</span><strong id="image-meta">Loading doughnut…</strong></figcaption>
+                <div class="image-stage__body">
+                  <div class="image-copy"><div><h3>Bring your own image</h3><p>Processing stays in this tab. Images are resized to at most 256 × 256.</p></div><label class="upload-button" for="image-file">Choose an image</label><input id="image-file" class="visually-hidden" type="file" accept="image/*"></div>
+                  <div class="image-pipeline" aria-label="Grayscale and binary mask previews">
+                    <div class="image-frame"><span>1 · Grayscale input</span><canvas id="image-preview" aria-label="Current grayscale image"></canvas></div>
+                    <span class="pipeline-arrow" aria-hidden="true">→</span>
+                    <div class="image-frame"><span>2 · Binary mask</span><canvas id="mask-preview" aria-label="Current binary mask"></canvas></div>
+                  </div>
+                  <div class="segmentation-controls">
+                    <label class="binary-toggle"><input id="binarize" type="checkbox" checked><span>Use binary mask</span></label>
+                    <label class="threshold-control"><span>Threshold <output id="threshold-value">Auto</output></span><input id="threshold" type="range" min="0" max="255" value="127" aria-label="Threshold"></label>
+                    <button id="auto-threshold" class="threshold-auto" type="button">Auto · Otsu</button>
+                    <label>Foreground<select id="foreground"><option value="dark">Darker pixels</option><option value="light">Lighter pixels</option></select></label>
+                  </div>
+                </div>
               </figure>
-              <div class="method-note"><strong>How it works</strong><p>Pixel values become vertex filtration values. The tool computes a 2D lower-star cubical filtration over F₂.</p></div>
+              <div class="method-note"><strong>How it works</strong><p>Photo → grayscale → gentle Gaussian denoise → Otsu or manual threshold → small-hole cleanup → binary cubical filtration over F₂. Turn off the mask to use grayscale intensities directly.</p></div>
               <div class="run-row"><button id="run-cubical" class="primary-action" type="submit">Compute cubical persistence</button><p>Images never leave your browser.</p></div>
             </form>
           </div>
@@ -393,13 +377,20 @@ export function mountApp(root: HTMLElement): void {
   const coefficientField = element<HTMLSelectElement>('#coefficient-field');
   const complexNote = element<HTMLParagraphElement>('#complex-note');
   const parameterFields = element<HTMLDivElement>('#parameter-fields');
-  const pointPreview = element<HTMLCanvasElement>('#point-preview');
+  const pointPreview = element<HTMLDivElement>('#point-preview');
+  const pointInteraction = element<HTMLDivElement>('#point-interaction');
   const pointMeta = element<HTMLElement>('#point-meta');
   const imageSelect = element<HTMLSelectElement>('#image-sample');
   const imageFile = element<HTMLInputElement>('#image-file');
   const filtration = element<HTMLSelectElement>('#filtration');
   const downsample = element<HTMLSelectElement>('#downsample');
+  const binarize = element<HTMLInputElement>('#binarize');
+  const threshold = element<HTMLInputElement>('#threshold');
+  const thresholdValue = element<HTMLOutputElement>('#threshold-value');
+  const autoThreshold = element<HTMLButtonElement>('#auto-threshold');
+  const foreground = element<HTMLSelectElement>('#foreground');
   const imagePreview = element<HTMLCanvasElement>('#image-preview');
+  const maskPreview = element<HTMLCanvasElement>('#mask-preview');
   const imageMeta = element<HTMLElement>('#image-meta');
   const diagram = element<HTMLCanvasElement>('#diagram');
   const resultJson = element<HTMLPreElement>('#result-json');
@@ -416,6 +407,10 @@ export function mountApp(root: HTMLElement): void {
   const metricRuntime = element<HTMLElement>('#metric-runtime');
 
   let currentPoints = pointSample('circle');
+  let automaticThreshold = true;
+  let cachedImage: ScalarImage | null = null;
+  let cachedSmoothedImage: ScalarImage | null = null;
+  const pointVisualization = mountPointCloudVisualization(pointPreview);
 
   const setMode = (mode: 'simplicial' | 'cubical') => {
     modeTabs.forEach((tab) => tab.setAttribute('aria-selected', String(tab.dataset.mode === mode)));
@@ -424,8 +419,33 @@ export function mountApp(root: HTMLElement): void {
   };
 
   const syncPointPreview = () => {
-    drawPointCloud(pointPreview, currentPoints);
-    pointMeta.textContent = `${currentPoints.length} points · ${currentPoints[0]?.length ?? 0}D`;
+    const dimension = currentPoints[0]?.length ?? 0;
+    pointVisualization.render(currentPoints);
+    pointMeta.textContent = `${currentPoints.length} points · ${dimension}D`;
+    pointPreview.setAttribute('aria-label', `Interactive point cloud with ${currentPoints.length} points in ${dimension} dimensions`);
+    pointInteraction.hidden = dimension !== 3;
+  };
+
+  const syncImagePreview = (image: ScalarImage) => {
+    if (image !== cachedImage || !cachedSmoothedImage) {
+      cachedImage = image;
+      cachedSmoothedImage = gaussianBlurImage(image);
+    }
+    const smoothedImage = cachedSmoothedImage;
+    const resolvedThreshold = automaticThreshold ? otsuThreshold(smoothedImage.values) : Number(threshold.value);
+    threshold.value = String(resolvedThreshold);
+    thresholdValue.value = binarize.checked
+      ? `${automaticThreshold ? 'Auto · ' : ''}${resolvedThreshold}`
+      : 'Off';
+    autoThreshold.dataset.active = String(automaticThreshold && binarize.checked);
+    threshold.disabled = !binarize.checked;
+    autoThreshold.disabled = !binarize.checked;
+    foreground.disabled = !binarize.checked;
+    drawImage(imagePreview, image);
+    const preview = binarize.checked
+      ? closeBinaryImage(binarizeImage(smoothedImage, resolvedThreshold, foreground.value as ForegroundPolarity).image)
+      : image;
+    drawImage(maskPreview, preview);
   };
 
   const setPoints = (points: number[][]) => {
@@ -434,6 +454,19 @@ export function mountApp(root: HTMLElement): void {
     pointFeedback.textContent = 'Every point must have two or three coordinates.';
     pointFeedback.dataset.status = 'valid';
     syncPointPreview();
+  };
+
+  let imageLoadGeneration = 0;
+  const setImage = (image: ScalarImage, label: string) => {
+    automaticThreshold = true;
+    updateWorkspace({ currentImage: image, activity: `Loaded ${label}.`, error: null });
+  };
+
+  const loadDoughnut = async () => {
+    const generation = ++imageLoadGeneration;
+    updateWorkspace({ activity: 'Loading the doughnut example…', error: null });
+    const image = await loadImageSource('/samples/donut.jpg', 'chocolate-doughnut');
+    if (generation === imageLoadGeneration) setImage(image, 'chocolate doughnut');
   };
 
   const renderParameters = (kind: ComplexKind) => {
@@ -519,16 +552,35 @@ export function mountApp(root: HTMLElement): void {
   });
 
   imageSelect.addEventListener('change', () => {
-    if (imageSelect.value !== 'custom') {
-      updateWorkspace({ currentImage: imageSample(imageSelect.value as 'ring' | 'two-rings' | 'two-blobs'), activity: `Loaded ${imageSelect.options[imageSelect.selectedIndex]?.text ?? imageSelect.value}.` });
+    if (imageSelect.value === 'donut') {
+      void loadDoughnut().catch((error: unknown) => updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) }));
+    } else if (imageSelect.value !== 'custom') {
+      imageLoadGeneration += 1;
+      setImage(imageSample(imageSelect.value as 'ring' | 'two-rings' | 'two-blobs'), imageSelect.options[imageSelect.selectedIndex]?.text ?? imageSelect.value);
     }
   });
 
   imageFile.addEventListener('change', () => {
     const file = imageFile.files?.[0];
     if (!file) return;
-    void loadImageFile(file).catch((error: unknown) => updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) }));
+    const generation = ++imageLoadGeneration;
+    void loadImageSource(file, file.name).then((image) => {
+      if (generation !== imageLoadGeneration) return;
+      imageSelect.value = 'custom';
+      setImage(image, file.name);
+    }).catch((error: unknown) => updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) }));
   });
+
+  binarize.addEventListener('change', () => syncImagePreview(getWorkspaceState().currentImage));
+  threshold.addEventListener('input', () => {
+    automaticThreshold = false;
+    syncImagePreview(getWorkspaceState().currentImage);
+  });
+  autoThreshold.addEventListener('click', () => {
+    automaticThreshold = true;
+    syncImagePreview(getWorkspaceState().currentImage);
+  });
+  foreground.addEventListener('change', () => syncImagePreview(getWorkspaceState().currentImage));
 
   simplicialPanel.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -551,6 +603,9 @@ export function mountApp(root: HTMLElement): void {
     void tdaRuntime.computeCubical({
       kind: 'cubical',
       source: 'current',
+      binarize: binarize.checked,
+      threshold: binarize.checked && !automaticThreshold ? Number(threshold.value) : undefined,
+      foreground: foreground.value as ForegroundPolarity,
       filtration: filtration.value as CubicalRequest['filtration'],
       downsample: Number(downsample.value) as 1 | 2 | 4,
     }).catch(() => undefined);
@@ -567,7 +622,7 @@ export function mountApp(root: HTMLElement): void {
 
   let lastSyncedRequest: unknown = null;
 
-  subscribeWorkspace((state) => {
+  const unsubscribe = subscribeWorkspace((state) => {
     if (state.latestRequest && state.latestRequest !== lastSyncedRequest) {
       lastSyncedRequest = state.latestRequest;
       const request = state.latestRequest as { kind?: string };
@@ -588,6 +643,10 @@ export function mountApp(root: HTMLElement): void {
       } else if (request.kind === 'cubical') {
         const cubical = state.latestRequest as CubicalRequest;
         setMode('cubical');
+        binarize.checked = cubical.binarize ?? true;
+        automaticThreshold = cubical.threshold === undefined;
+        if (cubical.threshold !== undefined) threshold.value = String(cubical.threshold);
+        foreground.value = cubical.foreground ?? 'dark';
         filtration.value = cubical.filtration ?? 'sublevel';
         downsample.value = String(cubical.downsample ?? 1);
         imageSelect.value = cubical.source === 'sample' ? cubical.sample ?? 'ring' : cubical.source === 'values' ? 'custom' : imageSelect.value;
@@ -603,12 +662,18 @@ export function mountApp(root: HTMLElement): void {
     runCubical.disabled = state.status === 'computing';
     runSimplicial.textContent = state.status === 'computing' && activeKind === 'simplicial' ? 'Computing…' : 'Compute simplicial persistence';
     runCubical.textContent = state.status === 'computing' && activeKind === 'cubical' ? 'Computing…' : 'Compute cubical persistence';
-    drawImage(imagePreview, state);
+    syncImagePreview(state.currentImage);
     imageMeta.textContent = `${state.currentImage.name} · ${state.currentImage.width} × ${state.currentImage.height}`;
     updateResult(state.latestResult);
   });
 
   setPoints(currentPoints);
   renderParameters('rips');
-  drawImage(imagePreview, getWorkspaceState());
+  syncImagePreview(getWorkspaceState().currentImage);
+  void loadDoughnut().catch((error: unknown) => updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) }));
+
+  return () => {
+    unsubscribe();
+    pointVisualization.unmount();
+  };
 }

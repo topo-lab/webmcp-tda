@@ -111,6 +111,7 @@ export const CAPABILITIES = {
     dimensions: [2],
     input: 'current uploaded image, built-in sample, or row-major scalar values',
     filtrations: ['sublevel', 'superlevel'],
+    preprocessing: '5×5 Gaussian denoise, Otsu or manual thresholding, and binary morphological closing by default; grayscale may be preserved explicitly',
     construction: 'vertex lower-star cubical filtration over F2',
   },
 };

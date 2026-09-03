@@ -2,6 +2,7 @@
 
 import { GudhiPersistentCohomology, type AlphaComplexResult } from 'tda-wasm';
 import { imageSample } from './samples';
+import { binarizeImage, closeBinaryImage, gaussianBlurImage } from './imageProcessing';
 import { summarizeComplex, summarizePersistence } from './summary';
 import type {
   ComplexParameters,
@@ -212,7 +213,14 @@ async function computeCubical(request: CubicalRequest, currentImage?: ScalarImag
   const startedAt = performance.now();
   const engine = await getEngine();
   const downsample = request.downsample ?? 1;
-  const image = downsampleImage(resolveImage(request, currentImage), downsample);
+  const sourceImage = resolveImage(request, currentImage);
+  const shouldBinarize = request.binarize ?? true;
+  const foreground = request.foreground ?? 'dark';
+  const processed = shouldBinarize
+    ? binarizeImage(gaussianBlurImage(sourceImage), request.threshold, foreground)
+    : { image: sourceImage, threshold: null };
+  if (shouldBinarize) processed.image = closeBinaryImage(processed.image);
+  const image = downsampleImage(processed.image, downsample);
   const filtration = request.filtration ?? 'sublevel';
   let values = image.values;
   if (filtration === 'superlevel') {
@@ -223,7 +231,16 @@ async function computeCubical(request: CubicalRequest, currentImage?: ScalarImag
   const persistence = engine.computeCubicalPersistenceFromVertices2D(values, image.width, image.height);
   return {
     kind: 'cubical' as const,
-    input: { name: image.name, width: image.width, height: image.height, filtration, downsample },
+    input: {
+      name: sourceImage.name,
+      width: image.width,
+      height: image.height,
+      binarized: shouldBinarize,
+      threshold: processed.threshold,
+      foreground: shouldBinarize ? foreground : null,
+      filtration,
+      downsample,
+    },
     persistence: summarizePersistence(persistence, request.resultLimit ?? 50),
     elapsedMs: performance.now() - startedAt,
   };

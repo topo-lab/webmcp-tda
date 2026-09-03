@@ -38,6 +38,14 @@ describe('agent input validation', () => {
     })).toThrow(/width × height/);
   });
 
+  it('rejects cubical thresholds outside the gray-value range', () => {
+    expect(() => validateCubicalRequest({
+      kind: 'cubical',
+      source: 'current',
+      threshold: 300,
+    })).toThrow(/between 0 and 255/);
+  });
+
   it('rejects requests whose worst-case complex exceeds the browser budget', () => {
     const points = Array.from({ length: 256 }, (_, index) => [index, index % 7, index % 11]);
     expect(() => validateSimplicialRequest({

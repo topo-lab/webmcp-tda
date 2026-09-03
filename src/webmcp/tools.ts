@@ -80,7 +80,7 @@ export function createWebMcpTools(runtime: TdaRuntime = tdaRuntime): WebMcpTool[
     {
       name: 'tda_compute_cubical_persistence',
       title: 'Compute image cubical persistence',
-      description: 'Compute 2D vertex lower-star cubical persistence over F2 from the current uploaded image, a built-in sample, or supplied row-major scalar values. Runs locally in a Web Worker and updates the visible shared result.',
+      description: 'Denoise an image, convert it to a binary foreground mask, close small mask holes, then compute 2D vertex lower-star cubical persistence over F2. Accepts the current uploaded image, a built-in sample, or supplied row-major scalar values. Omit threshold to use Otsu auto-thresholding. Runs locally in a Web Worker and updates the visible shared result.',
       inputSchema: objectSchema({
         source: { type: 'string', enum: ['current', 'sample', 'values'], default: 'current' },
         sample: { type: 'string', enum: ['ring', 'two-rings', 'two-blobs'] },
@@ -92,6 +92,9 @@ export function createWebMcpTools(runtime: TdaRuntime = tdaRuntime): WebMcpTool[
           items: { type: 'number' },
           description: 'Row-major scalar values; required when source is values and must contain width × height entries.',
         },
+        binarize: { type: 'boolean', default: true, description: 'Binarize before persistence. Set false to preserve a grayscale filtration.' },
+        threshold: { type: 'number', minimum: 0, maximum: 255, description: 'Manual grayscale threshold. Omit for Otsu automatic thresholding.' },
+        foreground: { type: 'string', enum: ['dark', 'light'], default: 'dark', description: 'Pixels on this side of the threshold become foreground value 0.' },
         filtration: { type: 'string', enum: ['sublevel', 'superlevel'], default: 'sublevel' },
         downsample: { type: 'integer', enum: [1, 2, 4], default: 1 },
         resultLimit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
