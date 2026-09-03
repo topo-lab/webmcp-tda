@@ -256,6 +256,15 @@ function metricValue(value: number): string {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(value);
 }
 
+/** Radius of the geometric cover represented by the filtration parameter. */
+function coverDiskRadius(complex: ComplexKind, filtrationValue: number): number | null {
+  const t = Math.max(0, filtrationValue);
+  if (complex === 'rips') return t / 2;
+  if (complex === 'cech') return t;
+  if (complex === 'alpha') return Math.sqrt(t);
+  return null;
+}
+
 export function parsePointInput(text: string): number[][] {
   const parsed = JSON.parse(text) as unknown;
   if (!Array.isArray(parsed) || parsed.length < 2) throw new Error('Enter an array containing at least two points.');
@@ -491,11 +500,20 @@ export function mountApp(root: HTMLElement): () => void {
   const syncPointPreview = () => {
     const dimension = currentPoints[0]?.length ?? 0;
     const visualization = activeSimplicialResult?.visualization;
+    const currentT = currentFiltrationValue();
     const activeEdges = dimension === 2 && visualization?.supported
-      ? visualization.edges.filter((edge) => edge.filtration <= currentFiltrationValue())
+      ? visualization.edges.filter((edge) => edge.filtration <= currentT)
       : [];
+    const currentDiskRadius = dimension === 2 && showFiltrationPlayhead && activeSimplicialResult
+      ? coverDiskRadius(activeSimplicialResult.complex, currentT)
+      : null;
+    const finalDiskRadius = currentDiskRadius !== null && activeSimplicialResult
+      ? coverDiskRadius(activeSimplicialResult.complex, activeSimplicialResult.visualization.maxFiltration)
+      : null;
     pointVisualization.render(currentPoints, {
       edges: activeEdges,
+      diskRadii: currentDiskRadius === null ? undefined : currentPoints.map(() => currentDiskRadius),
+      fitDiskRadii: finalDiskRadius === null ? undefined : currentPoints.map(() => finalDiskRadius),
       onPointsChange: dimension === 2 ? (nextPoints) => {
         stopFiltrationAnimation();
         activeSimplicialResult = null;
@@ -608,7 +626,10 @@ export function mountApp(root: HTMLElement): () => void {
     showFiltrationPlayhead = withPlayhead;
     filtrationProgress.value = String(Math.round(filtrationRatio * 1000));
     const t = currentFiltrationValue();
-    filtrationValue.value = `t = ${metricValue(t)}`;
+    const diskRadius = coverDiskRadius(activeSimplicialResult.complex, t);
+    filtrationValue.value = diskRadius === null
+      ? `t = ${metricValue(t)}`
+      : `t = ${metricValue(t)} · radius ${metricValue(diskRadius)}`;
     toggleFiltration.textContent = filtrationFrame !== null
       ? 'Pause filtration'
       : filtrationRatio >= 1 ? 'Replay filtration' : 'Play filtration';

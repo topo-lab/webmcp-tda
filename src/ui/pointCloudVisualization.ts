@@ -4,6 +4,8 @@ import { PointCloud2D, type PointCloud2DEdge } from 'tda-viz-react/2d';
 
 export interface PointCloudRenderOptions {
   edges?: readonly PointCloud2DEdge[];
+  diskRadii?: readonly number[];
+  fitDiskRadii?: readonly number[];
   onPointsChange?: (points: number[][]) => void;
 }
 
@@ -78,6 +80,11 @@ export function mountPointCloudVisualization(container: HTMLElement): PointCloud
       root.render(createElement(PointCloud2D, {
         points: points.flatMap((point) => [point[0] ?? 0, point[1] ?? 0]),
         edges: options.edges,
+        diskRadii: options.diskRadii,
+        fitDiskRadii: options.fitDiskRadii,
+        diskColor: '#5ac8e8',
+        diskOpacity: 0.13,
+        diskStrokeColor: '#78d4ea',
         editable: Boolean(options.onPointsChange),
         onPointsChange: options.onPointsChange
           ? (flatPoints: number[]) => options.onPointsChange!(Array.from(
