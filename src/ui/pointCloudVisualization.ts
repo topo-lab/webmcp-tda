@@ -1,11 +1,16 @@
 import { createElement, lazy, Suspense } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { PointCloud2D, type PointCloud2DEdge } from 'tda-viz-react/2d';
+import {
+  PointCloud2D,
+  type PointCloud2DEdge,
+  type PointCloud2DInteractionMode,
+} from 'tda-viz-react/2d';
 
 export interface PointCloudRenderOptions {
   edges?: readonly PointCloud2DEdge[];
   diskRadii?: readonly number[];
   fitDiskRadii?: readonly number[];
+  interactionMode?: PointCloud2DInteractionMode;
   onPointsChange?: (points: number[][]) => void;
 }
 
@@ -82,6 +87,7 @@ export function mountPointCloudVisualization(container: HTMLElement): PointCloud
         edges: options.edges,
         diskRadii: options.diskRadii,
         fitDiskRadii: options.fitDiskRadii,
+        interactionMode: options.interactionMode,
         diskColor: '#5ac8e8',
         diskOpacity: 0.13,
         diskStrokeColor: '#78d4ea',

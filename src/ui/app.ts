@@ -341,13 +341,18 @@ export function mountApp(root: HTMLElement): () => void {
               <figure class="data-stage">
                 <figcaption><span>Point-cloud preview</span><strong id="point-meta">32 points · 2D</strong></figcaption>
                 <div id="point-preview" class="point-cloud-stage" role="img" aria-label="Interactive point-cloud preview"></div>
-                <div id="point-interaction" class="stage-hint">Drag points · double-click for exact coordinates</div>
+                <div id="point-tools" class="point-tools" role="toolbar" aria-label="Point editing tools">
+                  <button type="button" data-point-tool="move" aria-pressed="true"><span aria-hidden="true">↔</span> Move</button>
+                  <button type="button" data-point-tool="edit" aria-pressed="false"><span aria-hidden="true">x,y</span> Edit</button>
+                </div>
+                <div id="point-interaction" class="stage-hint">Drag a point to move it</div>
               </figure>
               <div id="filtration-player" class="filtration-player">
                 <button id="toggle-filtration" class="animation-action" type="button" disabled><span aria-hidden="true">▶</span> Play filtration</button>
                 <label><span>Filtration scale</span><input id="filtration-progress" type="range" min="0" max="1000" value="1000" disabled></label>
                 <output id="filtration-value">Compute first</output>
               </div>
+              <div class="run-row run-row--after-player"><button id="run-simplicial" class="primary-action" type="submit">Compute simplicial persistence</button><p>Runs locally. Larger complexes may take a moment.</p></div>
               <div class="parameter-heading"><div><h3>Filtration settings</h3><p>Only parameters used by the selected complex are shown.</p></div></div>
               <div id="parameter-fields" class="parameter-grid"></div>
               <details class="advanced-input">
@@ -355,7 +360,6 @@ export function mountApp(root: HTMLElement): () => void {
                 <label>JSON array<textarea id="points-input" spellcheck="false" aria-describedby="point-input-feedback"></textarea></label>
                 <p id="point-input-feedback" class="field-feedback">Every point must have two or three coordinates.</p>
               </details>
-              <div class="run-row"><button id="run-simplicial" class="primary-action" type="submit">Compute simplicial persistence</button><p>Runs locally. Larger complexes may take a moment.</p></div>
             </form>
 
             <form id="cubical-panel" class="input-form" role="tabpanel" aria-label="Cubical persistence controls" hidden>
@@ -429,6 +433,8 @@ export function mountApp(root: HTMLElement): () => void {
   const complexNote = element<HTMLParagraphElement>('#complex-note');
   const parameterFields = element<HTMLDivElement>('#parameter-fields');
   const pointPreview = element<HTMLDivElement>('#point-preview');
+  const pointTools = element<HTMLDivElement>('#point-tools');
+  const pointToolButtons = [...pointTools.querySelectorAll<HTMLButtonElement>('[data-point-tool]')];
   const pointInteraction = element<HTMLDivElement>('#point-interaction');
   const pointMeta = element<HTMLElement>('#point-meta');
   const filtrationPlayer = element<HTMLDivElement>('#filtration-player');
@@ -471,6 +477,7 @@ export function mountApp(root: HTMLElement): () => void {
   let filtrationRatio = 1;
   let showFiltrationPlayhead = false;
   let filtrationFrame: number | null = null;
+  let pointInteractionMode: 'move' | 'edit' = 'move';
   const pointVisualization = mountPointCloudVisualization(pointPreview);
 
   const setMode = (mode: 'simplicial' | 'cubical') => {
@@ -514,6 +521,7 @@ export function mountApp(root: HTMLElement): () => void {
       edges: activeEdges,
       diskRadii: currentDiskRadius === null ? undefined : currentPoints.map(() => currentDiskRadius),
       fitDiskRadii: finalDiskRadius === null ? undefined : currentPoints.map(() => finalDiskRadius),
+      interactionMode: pointInteractionMode,
       onPointsChange: dimension === 2 ? (nextPoints) => {
         stopFiltrationAnimation();
         activeSimplicialResult = null;
@@ -531,9 +539,13 @@ export function mountApp(root: HTMLElement): () => void {
     });
     pointMeta.textContent = `${currentPoints.length} points · ${dimension}D`;
     pointPreview.setAttribute('aria-label', `Interactive point cloud with ${currentPoints.length} points in ${dimension} dimensions`);
+    pointTools.hidden = dimension !== 2;
+    pointToolButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.pointTool === pointInteractionMode)));
     pointInteraction.textContent = dimension === 3
       ? 'Drag to rotate · scroll to zoom'
-      : 'Drag points · double-click for exact coordinates';
+      : pointInteractionMode === 'move'
+        ? 'Drag a point to move it'
+        : 'Select a point to enter x, y';
     filtrationPlayer.hidden = dimension !== 2;
   };
 
@@ -703,6 +715,11 @@ export function mountApp(root: HTMLElement): () => void {
   };
 
   modeTabs.forEach((tab) => tab.addEventListener('click', () => setMode(tab.dataset.mode as 'simplicial' | 'cubical')));
+
+  pointToolButtons.forEach((button) => button.addEventListener('click', () => {
+    pointInteractionMode = button.dataset.pointTool as 'move' | 'edit';
+    syncPointPreview();
+  }));
 
   pointSampleSelect.addEventListener('change', () => {
     if (pointSampleSelect.value !== 'custom') {
