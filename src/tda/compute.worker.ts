@@ -14,7 +14,11 @@ import type {
   WorkerRequestMessage,
   WorkerResponseMessage,
 } from './types';
-import { validateCubicalRequest, validateSimplicialRequest } from './validation';
+import {
+  defaultMaximumSimplexDimension,
+  validateCubicalRequest,
+  validateSimplicialRequest,
+} from './validation';
 
 const workerScope = self as DedicatedWorkerGlobalScope;
 const MAX_VISUALIZATION_EDGES = 5_000;
@@ -41,7 +45,7 @@ function flat(points: number[][]): number[] {
 function defaults(request: SimplicialRequest): Required<Pick<ComplexParameters, 'maxSimplexDimension'>> & ComplexParameters {
   const pointCount = request.points.length;
   return {
-    maxSimplexDimension: request.parameters?.maxSimplexDimension ?? 2,
+    maxSimplexDimension: request.parameters?.maxSimplexDimension ?? defaultMaximumSimplexDimension(request.points),
     maxEdgeLength: request.parameters?.maxEdgeLength ?? 1.5,
     maxRadius: request.parameters?.maxRadius ?? 1,
     neighborhoodSize: request.parameters?.neighborhoodSize ?? Math.min(8, pointCount),

@@ -3,6 +3,7 @@ import { CAPABILITIES } from '../tda/capabilities';
 import { imageSample, POINT_SAMPLE_IDS, pointSample, type PointSampleId } from '../tda/samples';
 import { binarizeImage, closeBinaryImage, gaussianBlurImage, otsuThreshold, type ForegroundPolarity } from '../tda/imageProcessing';
 import { tdaRuntime } from '../tda/runtime';
+import { defaultMaximumSimplexDimension } from '../tda/validation';
 import type {
   ComplexKind,
   ComplexParameters,
@@ -15,15 +16,15 @@ import type {
 import { mountPointCloudVisualization } from './pointCloudVisualization';
 
 const PARAMETER_DEFAULTS: Record<ComplexKind, ComplexParameters> = {
-  rips: { maxEdgeLength: 0.7, maxSimplexDimension: 2 },
-  alpha: { maxSimplexDimension: 2 },
-  cech: { maxRadius: 0.5, maxSimplexDimension: 2 },
-  'ellipsoid-rips': { neighborhoodSize: 6, axesMode: 'pca', maxFiltration: 1.5, maxSimplexDimension: 2 },
-  'ellipsoid-cech': { neighborhoodSize: 6, axesMode: 'pca', maxFiltration: 1.5, maxSimplexDimension: 2 },
-  wing: { q: 0.3, theta: 0.785, neighborhoodSize: 6, maxEps: 1.5, maxSimplexDimension: 2 },
-  box: { stepSize: 0.1, alpha: 0.5, maxSteps: 20, maxSimplexDimension: 2 },
-  'k-fold-cover': { k: 2, maxSquaredRadius: 4, maxSimplexDimension: 3 },
-  witness: { numLandmarks: 12, maxAlphaSquare: 1, maxSimplexDimension: 2 },
+  rips: { maxEdgeLength: 0.7 },
+  alpha: {},
+  cech: { maxRadius: 0.5 },
+  'ellipsoid-rips': { neighborhoodSize: 6, axesMode: 'pca', maxFiltration: 1.5 },
+  'ellipsoid-cech': { neighborhoodSize: 6, axesMode: 'pca', maxFiltration: 1.5 },
+  wing: { q: 0.3, theta: 0.785, neighborhoodSize: 6, maxEps: 1.5 },
+  box: { stepSize: 0.1, alpha: 0.5, maxSteps: 20 },
+  'k-fold-cover': { k: 2, maxSquaredRadius: 4 },
+  witness: { numLandmarks: 12, maxAlphaSquare: 1 },
 };
 
 interface ParameterField {
@@ -36,61 +37,42 @@ interface ParameterField {
   options?: Array<{ label: string; value: string }>;
 }
 
-const dimensionField: ParameterField = {
-  key: 'maxSimplexDimension',
-  label: 'Maximum simplex dimension',
-  help: 'Compute through edges, triangles, or tetrahedra.',
-  options: [
-    { label: '1 · edges', value: '1' },
-    { label: '2 · triangles', value: '2' },
-    { label: '3 · tetrahedra', value: '3' },
-  ],
-};
-
 const PARAMETER_FIELDS: Record<ComplexKind, ParameterField[]> = {
   rips: [
     { key: 'maxEdgeLength', label: 'Maximum edge length', help: 'Connect points no farther apart than this.', min: 0.05, step: 0.05 },
-    dimensionField,
   ],
-  alpha: [dimensionField],
+  alpha: [],
   cech: [
     { key: 'maxRadius', label: 'Maximum ball radius', help: 'Grow equal-radius balls around every point.', min: 0.05, step: 0.05 },
-    dimensionField,
   ],
   'ellipsoid-rips': [
     { key: 'neighborhoodSize', label: 'Local neighbors', help: 'Points used to estimate local direction.', min: 2, max: 64, step: 1 },
     { key: 'axesMode', label: 'Ellipsoid axes', help: 'Use PCA or a fixed tangent-to-normal ratio.', options: [{ label: 'PCA-derived', value: 'pca' }, { label: '1.5×', value: '1.5' }, { label: '2×', value: '2' }, { label: '3×', value: '3' }] },
     { key: 'maxFiltration', label: 'Maximum filtration', help: 'Stop the anisotropic growth at this scale.', min: 0.05, step: 0.05 },
-    dimensionField,
   ],
   'ellipsoid-cech': [
     { key: 'neighborhoodSize', label: 'Local neighbors', help: 'Points used to estimate local direction.', min: 2, max: 64, step: 1 },
     { key: 'axesMode', label: 'Ellipsoid axes', help: 'Use PCA or a fixed tangent-to-normal ratio.', options: [{ label: 'PCA-derived', value: 'pca' }, { label: '1.5×', value: '1.5' }, { label: '2×', value: '2' }, { label: '3×', value: '3' }] },
     { key: 'maxFiltration', label: 'Maximum filtration', help: 'Stop the ellipsoid nerve at this scale.', min: 0.05, step: 0.05 },
-    dimensionField,
   ],
   wing: [
     { key: 'q', label: 'Wing ratio q', help: 'Controls spine-to-wing balance.', min: 0, max: 1, step: 0.05 },
     { key: 'theta', label: 'Angle θ · radians', help: 'Maximum local turning angle.', min: 0.001, max: 1.571, step: 0.001 },
     { key: 'neighborhoodSize', label: 'Local neighbors', help: 'Points used for the curvature estimate.', min: 2, max: 64, step: 1 },
     { key: 'maxEps', label: 'Maximum epsilon', help: 'Stop the filtration at this scale.', min: 0.05, step: 0.05 },
-    dimensionField,
   ],
   box: [
     { key: 'stepSize', label: 'Step size', help: 'Resolution of the box-growth filtration.', min: 0.05, step: 0.05 },
     { key: 'alpha', label: 'Growth rate α', help: 'Controls box expansion at each step.', min: 0, max: 1, step: 0.05 },
     { key: 'maxSteps', label: 'Maximum steps', help: 'Number of filtration steps.', min: 1, max: 100, step: 1 },
-    dimensionField,
   ],
   'k-fold-cover': [
     { key: 'k', label: 'Cover multiplicity k', help: 'Required number of overlapping balls.', min: 1, max: 4, step: 1 },
     { key: 'maxSquaredRadius', label: 'Maximum squared radius', help: 'Stop the multicover filtration here.', min: 0.1, step: 0.1 },
-    dimensionField,
   ],
   witness: [
     { key: 'numLandmarks', label: 'Landmarks', help: 'Representative vertices selected from the cloud.', min: 2, max: 64, step: 1 },
     { key: 'maxAlphaSquare', label: 'Maximum squared relaxation', help: 'Tolerance for weak witnesses.', min: 0.1, step: 0.1 },
-    dimensionField,
   ],
 };
 
@@ -353,7 +335,7 @@ export function mountApp(root: HTMLElement): () => void {
                 <output id="filtration-value">Compute first</output>
               </div>
               <div class="run-row run-row--after-player"><button id="run-simplicial" class="primary-action" type="submit">Compute simplicial persistence</button><p>Runs locally. Larger complexes may take a moment.</p></div>
-              <div class="parameter-heading"><div><h3>Filtration settings</h3><p>Only parameters used by the selected complex are shown.</p></div></div>
+              <div id="parameter-heading" class="parameter-heading"><div><h3>Filtration settings</h3><p>Only geometry-specific controls are shown.</p></div></div>
               <div id="parameter-fields" class="parameter-grid"></div>
               <details class="advanced-input">
                 <summary>Edit point coordinates</summary>
@@ -431,6 +413,7 @@ export function mountApp(root: HTMLElement): () => void {
   const complexSelect = element<HTMLSelectElement>('#complex-kind');
   const coefficientField = element<HTMLSelectElement>('#coefficient-field');
   const complexNote = element<HTMLParagraphElement>('#complex-note');
+  const parameterHeading = element<HTMLDivElement>('#parameter-heading');
   const parameterFields = element<HTMLDivElement>('#parameter-fields');
   const pointPreview = element<HTMLDivElement>('#point-preview');
   const pointTools = element<HTMLDivElement>('#point-tools');
@@ -600,7 +583,10 @@ export function mountApp(root: HTMLElement): () => void {
 
   const renderParameters = (kind: ComplexKind) => {
     const defaults = PARAMETER_DEFAULTS[kind];
-    parameterFields.innerHTML = PARAMETER_FIELDS[kind].map((field) => {
+    const fields = PARAMETER_FIELDS[kind];
+    parameterHeading.hidden = fields.length === 0;
+    parameterFields.hidden = fields.length === 0;
+    parameterFields.innerHTML = fields.map((field) => {
       const value = defaults[field.key] ?? '';
       const control = field.options
         ? `<select data-parameter="${field.key}">${field.options.map((option) => `<option value="${option.value}" ${String(value) === option.value ? 'selected' : ''}>${option.label}</option>`).join('')}</select>`
@@ -619,8 +605,10 @@ export function mountApp(root: HTMLElement): () => void {
     });
   };
 
-  const readParameters = (): ComplexParameters => {
-    const parameters: Record<string, number | 'pca'> = {};
+  const readParameters = (points: number[][]): ComplexParameters => {
+    const parameters: Record<string, number | 'pca'> = {
+      maxSimplexDimension: defaultMaximumSimplexDimension(points),
+    };
     parameterFields.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-parameter]').forEach((control) => {
       const key = control.dataset.parameter!;
       if (key === 'axesMode' && control.value === 'pca') parameters[key] = 'pca';
@@ -825,7 +813,7 @@ export function mountApp(root: HTMLElement): () => void {
         complex: complexSelect.value as ComplexKind,
         points,
         coefficientField: Number(coefficientField.value),
-        parameters: readParameters(),
+        parameters: readParameters(points),
       }).catch(() => undefined);
     } catch (error) {
       updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error), activity: 'Check the point coordinates and filtration settings.' });

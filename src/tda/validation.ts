@@ -6,6 +6,10 @@ export const MAX_LINEAR_SCALE = 4_000_000;
 export const MAX_SQUARED_SCALE = 16_000_000_000_000;
 export const MAX_POTENTIAL_SIMPLICES = 2_000_000;
 
+export function defaultMaximumSimplexDimension(points: number[][]): 2 | 3 {
+  return points[0]?.length === 3 ? 3 : 2;
+}
+
 function assertFinite(value: unknown, label: string): asserts value is number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     throw new Error(`${label} must be a finite number.`);
@@ -46,7 +50,7 @@ export function validateSimplicialRequest(input: SimplicialRequest): SimplicialR
     throw new Error('resultLimit must be an integer between 1 and 200.');
   }
   const parameters = input.parameters ?? {};
-  const maxSimplexDimension = parameters.maxSimplexDimension ?? 2;
+  const maxSimplexDimension = parameters.maxSimplexDimension ?? defaultMaximumSimplexDimension(input.points);
   if (!Number.isInteger(maxSimplexDimension) || maxSimplexDimension < 1 || maxSimplexDimension > 3) {
     throw new Error('maxSimplexDimension must be an integer between 1 and 3.');
   }
@@ -120,7 +124,7 @@ export function potentialSimplexCount(input: SimplicialRequest): number {
   } else {
     return 0;
   }
-  const maximumDimension = input.parameters?.maxSimplexDimension ?? 2;
+  const maximumDimension = input.parameters?.maxSimplexDimension ?? defaultMaximumSimplexDimension(input.points);
   let total = 0;
   for (let simplexSize = 1; simplexSize <= maximumDimension + 1; simplexSize += 1) {
     total += binomial(vertices, simplexSize);

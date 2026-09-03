@@ -14,7 +14,12 @@ const objectSchema = (properties: Record<string, unknown>, required: string[] = 
 const parametersSchema = objectSchema({
   maxEdgeLength: { type: 'number', exclusiveMinimum: 0, maximum: MAX_LINEAR_SCALE, description: 'Rips maximum edge length.' },
   maxRadius: { type: 'number', exclusiveMinimum: 0, maximum: MAX_LINEAR_SCALE, description: 'Čech maximum ball radius.' },
-  maxSimplexDimension: { type: 'integer', minimum: 1, maximum: 3, default: 2 },
+  maxSimplexDimension: {
+    type: 'integer',
+    minimum: 1,
+    maximum: 3,
+    description: 'Optional override. Defaults to 2 for 2D input and 3 for 3D input.',
+  },
   neighborhoodSize: { type: 'integer', minimum: 2, description: 'Local neighborhood for ellipsoid or Wing fitting.' },
   axesMode: {
     description: 'Ellipsoid tangent-to-normal ratio >= 1, or "pca" for data-derived semi-axes.',

@@ -6,7 +6,7 @@ This is a dedicated WebMCP project. It is not the TDA Explorer and contains no l
 
 ## Human workbench
 
-- Explore built-in 2D and 3D point-cloud examples with a live SVG/WebGL preview. In 2D, choose the Move tool to drag points or the Edit tool to enter exact coordinates, then play the computed filtration while its associated disks, edges, and persistence-diagram playhead advance together. The cover uses radius t/2 for Rips, t for Čech, and √t for alpha. Three-dimensional clouds rotate automatically and support drag-to-orbit and wheel/pinch zoom through the local `tda-viz-react` library.
+- Explore built-in 2D and 3D point-cloud examples with a live SVG/WebGL preview. In 2D, choose the Move tool to drag points or the Edit tool to enter exact coordinates, then play the computed filtration while its associated disks, edges, and persistence-diagram playhead advance together. The maximum simplex dimension is selected automatically from the input dimension, while agents may explicitly override it. The cover uses radius t/2 for Rips, t for Čech, and √t for alpha. Three-dimensional clouds rotate automatically and support drag-to-orbit and wheel/pinch zoom through the local `tda-viz-react` library.
 - Choose among nine simplicial-complex constructions and edit their relevant parameters through structured controls.
 - Paste exact point coordinates when needed without making raw JSON the default experience.
 - Analyze a doughnut photograph, built-in masks, or uploaded images through a visible original-color → grayscale → denoise → binary-mask → small-hole cleanup → cubical-persistence pipeline. Otsu thresholding is automatic, with manual threshold, foreground polarity, and grayscale controls available.

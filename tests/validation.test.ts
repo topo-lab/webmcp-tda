@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { validateCubicalRequest, validateSimplicialRequest } from '../src/tda/validation';
+import {
+  defaultMaximumSimplexDimension,
+  validateCubicalRequest,
+  validateSimplicialRequest,
+} from '../src/tda/validation';
 
 describe('agent input validation', () => {
+  it('chooses filtration depth from the input dimension by default', () => {
+    expect(defaultMaximumSimplexDimension([[0, 0], [1, 1]])).toBe(2);
+    expect(defaultMaximumSimplexDimension([[0, 0, 0], [1, 1, 1]])).toBe(3);
+  });
+
   it('accepts a finite 2D Rips request', () => {
     const request = {
       kind: 'simplicial' as const,
