@@ -55,13 +55,7 @@ a { color: inherit; }
   backdrop-filter: blur(18px) saturate(130%);
 }
 
-.wordmark { min-width: max-content; display: inline-flex; align-items: center; gap: 10px; justify-self: start; color: var(--ink); text-decoration: none; }
-.brand-mark { width: 25px; height: 25px; padding: 4px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; align-items: end; border-radius: 7px; background: var(--ink); }
-.brand-mark i { display: block; height: 45%; border-radius: 99px; background: #eefaff; }
-.brand-mark i:nth-child(2) { height: 100%; background: var(--vermilion); }
-.brand-mark i:nth-child(3) { height: 70%; }
-.brand-copy { display: inline-flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 700; letter-spacing: -.025em; }
-.brand-copy b { padding-left: 10px; border-left: 1px solid var(--line); color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .01em; }
+.wordmark { min-width: max-content; justify-self: start; color: var(--ink); font-size: 14px; font-weight: 700; letter-spacing: -.025em; text-decoration: none; }
 .site-nav { display: flex; align-items: center; gap: 4px; }
 .site-nav a { min-height: 42px; padding: 0 11px; display: inline-flex; align-items: center; border-radius: 9px; color: var(--muted); font-size: 12px; font-weight: 600; text-decoration: none; transition: color 150ms ease, background-color 150ms ease; }
 .site-nav a:hover { color: var(--ink); background: rgba(255, 255, 255, .78); }

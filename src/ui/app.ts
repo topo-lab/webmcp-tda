@@ -250,15 +250,14 @@ function resultDescription(result: ComputeResult): string {
 export function mountApp(root: HTMLElement): () => void {
   root.innerHTML = `
     <header class="masthead">
-      <a class="wordmark" href="#top" aria-label="WebMCP TDA home"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span class="brand-copy">topolab <b>WebMCP TDA</b></span></a>
+      <a class="wordmark" href="#top" aria-label="WebMCP TDA home">WebMCP TDA</a>
       <nav class="site-nav" aria-label="Primary navigation">
         <a href="#workbench">Workbench</a>
         <a href="#agent-access">Agent access</a>
-        <a href="https://github.com/topo-lab/webmcp-tda" target="_blank" rel="noreferrer">GitHub ↗</a>
       </nav>
       <div class="status-cluster" title="WebMCP registration status">
-        <span class="status-label">Agent tools</span>
-        <span id="webmcp-status" class="status-pill">registering</span>
+        <span class="status-label">WebMCP</span>
+        <span id="webmcp-status" class="status-pill">checking</span>
       </div>
     </header>
 
@@ -364,7 +363,7 @@ export function mountApp(root: HTMLElement): () => void {
       </section>
     </main>
 
-    <footer><span>TopoLab · WebMCP Challenge 2026</span><span>Human-first · agent-ready · browser-local</span></footer>
+    <footer><span>WebMCP Challenge 2026</span><span>Human-first · agent-ready · browser-local</span></footer>
   `;
 
   const modeTabs = [...document.querySelectorAll<HTMLButtonElement>('[data-mode]')];
@@ -652,8 +651,13 @@ export function mountApp(root: HTMLElement): () => void {
         imageSelect.value = cubical.source === 'sample' ? cubical.sample ?? 'ring' : cubical.source === 'values' ? 'custom' : imageSelect.value;
       }
     }
-    webMcpStatus.textContent = state.webMcpStatus;
+    webMcpStatus.textContent = state.webMcpStatus === 'unsupported'
+      ? 'browser unavailable'
+      : state.webMcpStatus === 'registering' ? 'checking' : state.webMcpStatus;
     webMcpStatus.dataset.status = state.webMcpStatus;
+    webMcpStatus.parentElement!.title = state.webMcpStatus === 'unsupported'
+      ? 'This browser does not expose the experimental WebMCP API. The human workbench still works normally.'
+      : 'WebMCP registration status';
     computeStatus.textContent = state.status === 'computing' ? 'Computing…' : state.status[0]!.toUpperCase() + state.status.slice(1);
     computeStatus.dataset.status = state.status;
     activity.textContent = state.error ?? state.activity;
