@@ -45,7 +45,7 @@ function drawDiagram(canvas: HTMLCanvasElement, pairs: SerializablePair[]): void
   const width = canvas.width;
   const height = canvas.height;
   context.clearRect(0, 0, width, height);
-  context.fillStyle = '#0d1117';
+  context.fillStyle = '#ffffff';
   context.fillRect(0, 0, width, height);
   const finiteValues = pairs.flatMap((pair) => [pair.birth, pair.death === 'infinity' ? pair.birth : pair.death]);
   const minimum = Math.min(0, ...finiteValues);
@@ -53,7 +53,7 @@ function drawDiagram(canvas: HTMLCanvasElement, pairs: SerializablePair[]): void
   const margin = 28;
   const scaleX = (value: number) => margin + ((value - minimum) / (maximum - minimum || 1)) * (width - margin * 2);
   const scaleY = (value: number) => height - margin - ((value - minimum) / (maximum - minimum || 1)) * (height - margin * 2);
-  context.strokeStyle = '#53606c';
+  context.strokeStyle = '#9fb2b6';
   context.lineWidth = 1;
   context.beginPath();
   context.moveTo(scaleX(minimum), scaleY(minimum));
@@ -61,7 +61,7 @@ function drawDiagram(canvas: HTMLCanvasElement, pairs: SerializablePair[]): void
   context.stroke();
   pairs.forEach((pair) => {
     const death = pair.death === 'infinity' ? maximum : pair.death;
-    context.fillStyle = pair.dimension === 0 ? '#67e8f9' : pair.dimension === 1 ? '#fbbf24' : '#f472b6';
+    context.fillStyle = pair.dimension === 0 ? '#2f86eb' : pair.dimension === 1 ? '#e85f3f' : '#7657d6';
     context.beginPath();
     context.arc(scaleX(pair.birth), scaleY(death), pair.death === 'infinity' ? 5 : 3.5, 0, Math.PI * 2);
     context.fill();
