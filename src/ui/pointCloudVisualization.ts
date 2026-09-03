@@ -1,8 +1,14 @@
 import { createElement, lazy, Suspense } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { PointCloud2D, type PointCloud2DEdge } from 'tda-viz-react/2d';
+
+export interface PointCloudRenderOptions {
+  edges?: readonly PointCloud2DEdge[];
+  onPointsChange?: (points: number[][]) => void;
+}
 
 export interface PointCloudVisualization {
-  render(points: number[][]): void;
+  render(points: number[][], options?: PointCloudRenderOptions): void;
   unmount(): void;
 }
 
@@ -18,44 +24,6 @@ function normalize3d(points: number[][]): number[] {
   ]);
   const radius = Math.max(0.001, ...centered.map(([x, y, z]) => Math.hypot(x!, y!, z!)));
   return centered.flatMap(([x, y, z]) => [x! / radius, y! / radius, z! / radius]);
-}
-
-function project2d(points: number[][]): Array<readonly [number, number]> {
-  const width = 720;
-  const height = 380;
-  const padding = 40;
-  const xs = points.map((point) => point[0] ?? 0);
-  const ys = points.map((point) => point[1] ?? 0);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  const spanX = maxX - minX || 1;
-  const spanY = maxY - minY || 1;
-  const scale = Math.min((width - padding * 2) / spanX, (height - padding * 2) / spanY);
-  const offsetX = padding + (width - padding * 2 - spanX * scale) / 2;
-  const offsetY = padding + (height - padding * 2 - spanY * scale) / 2;
-  return points.map((point) => [
-    offsetX + ((point[0] ?? 0) - minX) * scale,
-    offsetY + (maxY - (point[1] ?? 0)) * scale,
-  ] as const);
-}
-
-function PointCloudSvg({ points }: { points: number[][] }) {
-  const positions = project2d(points);
-  return createElement(
-    'svg',
-    { className: 'point-cloud-2d', viewBox: '0 0 720 380', role: 'img', 'aria-label': `Point cloud with ${points.length} points in two dimensions` },
-    positions.map(([cx, cy], index) => createElement('circle', {
-      key: index,
-      cx,
-      cy,
-      r: 4.6,
-      fill: '#eefaff',
-      stroke: '#5ac8e8',
-      strokeWidth: 1.4,
-    })),
-  );
 }
 
 const RotatablePointCloud3D = lazy(async () => {
@@ -96,7 +64,7 @@ export function mountPointCloudVisualization(container: HTMLElement): PointCloud
   const root: Root = createRoot(container);
 
   return {
-    render(points) {
+    render(points, options = {}) {
       const dimension = points[0]?.length === 3 ? 3 : 2;
       if (dimension === 3) {
         root.render(createElement(
@@ -107,7 +75,26 @@ export function mountPointCloudVisualization(container: HTMLElement): PointCloud
         return;
       }
 
-      root.render(createElement(PointCloudSvg, { points }));
+      root.render(createElement(PointCloud2D, {
+        points: points.flatMap((point) => [point[0] ?? 0, point[1] ?? 0]),
+        edges: options.edges,
+        editable: Boolean(options.onPointsChange),
+        onPointsChange: options.onPointsChange
+          ? (flatPoints: number[]) => options.onPointsChange!(Array.from(
+            { length: flatPoints.length / 2 },
+            (_, index) => [flatPoints[index * 2]!, flatPoints[index * 2 + 1]!],
+          ))
+          : undefined,
+        width: 720,
+        height: 380,
+        padding: 40,
+        pointRadius: 4.6,
+        color: '#eefaff',
+        edgeColor: '#5ac8e8',
+        edgeWidth: 1.4,
+        className: 'point-cloud-2d',
+        'aria-label': `Interactive point cloud with ${points.length} points in two dimensions`,
+      }));
     },
     unmount() {
       root.unmount();

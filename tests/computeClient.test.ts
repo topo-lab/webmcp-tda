@@ -34,6 +34,7 @@ const result: ComputeResult = {
   complex: 'rips',
   input: { pointCount: 2, dimension: 2, coefficientField: 2, parameters: { maxSimplexDimension: 2 } },
   complexSummary: { simplexCount: 3, simplexCountsByDimension: { 0: 2, 1: 1 }, maxDimension: 1 },
+  visualization: { supported: true, reason: null, edges: [{ vertices: [0, 1], filtration: 1 }], edgeCount: 1, truncated: false, minFiltration: 0, maxFiltration: 1 },
   persistence: { pairCount: 1, pairsByDimension: { 0: 1 }, essentialCount: 1, returnedPairCount: 1, strongestPairs: [] },
   interpretation: { reliableThroughDimension: 1, warning: null },
   elapsedMs: 1,

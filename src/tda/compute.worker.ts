@@ -17,6 +17,7 @@ import type {
 import { validateCubicalRequest, validateSimplicialRequest } from './validation';
 
 const workerScope = self as DedicatedWorkerGlobalScope;
+const MAX_VISUALIZATION_EDGES = 5_000;
 let enginePromise: Promise<GudhiPersistentCohomology> | null = null;
 
 function getEngine(): Promise<GudhiPersistentCohomology> {
@@ -164,6 +165,18 @@ async function computeSimplicial(request: SimplicialRequest): Promise<Simplicial
 
   const coefficientField = request.coefficientField ?? 2;
   const persistence = engine.computePersistence(complex.simplices, coefficientField);
+  const canAnimate = dimension === 2 && request.complex !== 'witness';
+  const allEdges = canAnimate
+    ? complex.simplices.filter((simplex) =>
+      simplex.vertices.length === 2
+      && simplex.vertices.every((vertex) => vertex >= 0 && vertex < request.points.length),
+    )
+    : [];
+  const edges = allEdges.slice(0, MAX_VISUALIZATION_EDGES).map((simplex) => ({
+    vertices: [simplex.vertices[0]!, simplex.vertices[1]!] as [number, number],
+    filtration: simplex.filtration,
+  }));
+  const finiteFiltrations = edges.map((edge) => edge.filtration).filter(Number.isFinite);
   return {
     kind: 'simplicial',
     complex: request.complex,
@@ -174,6 +187,19 @@ async function computeSimplicial(request: SimplicialRequest): Promise<Simplicial
       parameters: reportedParameters(request.complex, parameters),
     },
     complexSummary: summarizeComplex(complex.simplices),
+    visualization: {
+      supported: canAnimate,
+      reason: dimension !== 2
+        ? 'Filtration playback is available for 2D point clouds.'
+        : request.complex === 'witness'
+          ? 'Witness vertices use an internal landmark order, so playback is hidden rather than drawing incorrect edges.'
+          : null,
+      edges,
+      edgeCount: allEdges.length,
+      truncated: allEdges.length > edges.length,
+      minFiltration: 0,
+      maxFiltration: Math.max(1e-9, ...finiteFiltrations),
+    },
     persistence: summarizePersistence(persistence, request.resultLimit ?? 50),
     interpretation: {
       reliableThroughDimension: Math.max(0, maxDimension - 1),

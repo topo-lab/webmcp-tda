@@ -53,7 +53,13 @@ export class TdaRuntime {
 
   private async run(request: SimplicialRequest | CubicalRequest, signal?: AbortSignal): Promise<ComputeResult> {
     const generation = ++this.generation;
-    updateWorkspace({ status: 'computing', activity: `Computing ${request.kind} persistence…`, error: null, latestRequest: request });
+    updateWorkspace({
+      status: 'computing',
+      activity: `Computing ${request.kind} persistence…`,
+      error: null,
+      latestRequest: request,
+      latestResult: null,
+    });
     try {
       const result = await this.backend.run(request, getWorkspaceState().currentImage, signal);
       if (generation !== this.generation) throw new Error('This result was superseded by a newer computation.');

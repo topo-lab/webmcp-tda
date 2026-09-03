@@ -17,6 +17,15 @@ const fakeResult: ComputeResult = {
     simplexCountsByDimension: { 0: 3, 1: 3, 2: 1 },
     maxDimension: 2,
   },
+  visualization: {
+    supported: true,
+    reason: null,
+    edges: [{ vertices: [0, 1], filtration: 1 }],
+    edgeCount: 1,
+    truncated: false,
+    minFiltration: 0,
+    maxFiltration: 1,
+  },
   persistence: {
     pairCount: 1,
     pairsByDimension: { 0: 1 },

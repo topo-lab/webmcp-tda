@@ -83,6 +83,21 @@ export interface PersistenceSummary {
   strongestPairs: SerializablePair[];
 }
 
+export interface FiltrationEdge {
+  vertices: [number, number];
+  filtration: number;
+}
+
+export interface SimplicialVisualization {
+  supported: boolean;
+  reason: string | null;
+  edges: FiltrationEdge[];
+  edgeCount: number;
+  truncated: boolean;
+  minFiltration: number;
+  maxFiltration: number;
+}
+
 export interface SimplicialResult {
   kind: 'simplicial';
   complex: ComplexKind;
@@ -97,6 +112,7 @@ export interface SimplicialResult {
     simplexCountsByDimension: Record<number, number>;
     maxDimension: number;
   };
+  visualization: SimplicialVisualization;
   persistence: PersistenceSummary;
   interpretation: {
     reliableThroughDimension: number;

@@ -10,6 +10,7 @@ import type {
   CubicalRequest,
   SerializablePair,
   ScalarImage,
+  SimplicialResult,
 } from '../tda/types';
 import { mountPointCloudVisualization } from './pointCloudVisualization';
 
@@ -132,7 +133,23 @@ function drawImage(canvas: HTMLCanvasElement, image: ScalarImage): void {
   context.putImageData(pixels, 0, 0);
 }
 
-function drawDiagram(canvas: HTMLCanvasElement, pairs: SerializablePair[]): void {
+function drawColorImage(canvas: HTMLCanvasElement, image: ScalarImage, rgba?: Uint8ClampedArray): void {
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const context = canvas.getContext('2d');
+  if (!context) return;
+  if (!rgba || rgba.length !== image.width * image.height * 4) {
+    drawImage(canvas, image);
+    return;
+  }
+  context.putImageData(new ImageData(new Uint8ClampedArray(rgba), image.width, image.height), 0, 0);
+}
+
+function drawDiagram(
+  canvas: HTMLCanvasElement,
+  pairs: SerializablePair[],
+  animation?: { playhead: number; axisMaximum: number },
+): void {
   const context = canvas.getContext('2d');
   if (!context) return;
   const { width, height } = canvas;
@@ -149,7 +166,7 @@ function drawDiagram(canvas: HTMLCanvasElement, pairs: SerializablePair[]): void
   }
   const finiteValues = pairs.flatMap((pair) => [pair.birth, pair.death === 'infinity' ? pair.birth : pair.death]);
   const minimum = Math.min(0, ...finiteValues);
-  const maximum = Math.max(1, ...finiteValues);
+  const maximum = Math.max(1, animation?.axisMaximum ?? 0, ...finiteValues);
   const range = maximum - minimum || 1;
   const upper = maximum + range * 0.08;
   const scaleX = (value: number) => left + ((value - minimum) / (upper - minimum)) * (width - left - right);
@@ -180,9 +197,22 @@ function drawDiagram(canvas: HTMLCanvasElement, pairs: SerializablePair[]): void
   context.save(); context.translate(14, (top + height - bottom) / 2); context.rotate(-Math.PI / 2); context.fillText('death', 0, 0); context.restore();
   context.textAlign = 'left'; context.fillText('∞', width - right - 10, top - 8);
 
+  if (animation) {
+    const playhead = Math.max(minimum, Math.min(upper, animation.playhead));
+    context.save();
+    context.setLineDash([6, 5]);
+    context.strokeStyle = '#e85f3f';
+    context.lineWidth = 1.5;
+    context.beginPath(); context.moveTo(scaleX(playhead), top); context.lineTo(scaleX(playhead), height - bottom); context.stroke();
+    context.beginPath(); context.moveTo(left, scaleY(playhead)); context.lineTo(width - right, scaleY(playhead)); context.stroke();
+    context.restore();
+  }
+
   pairs.forEach((pair) => {
     const death = pair.death === 'infinity' ? upper : pair.death;
+    const alive = !animation || (pair.birth <= animation.playhead && (pair.death === 'infinity' || animation.playhead < pair.death));
     context.fillStyle = pair.dimension === 0 ? '#2f86eb' : pair.dimension === 1 ? '#e85f3f' : '#7657d6';
+    context.globalAlpha = alive ? 1 : 0.22;
     context.beginPath();
     context.arc(scaleX(pair.birth), scaleY(death), pair.death === 'infinity' ? 5 : 4, 0, Math.PI * 2);
     context.fill();
@@ -190,9 +220,15 @@ function drawDiagram(canvas: HTMLCanvasElement, pairs: SerializablePair[]): void
       context.strokeStyle = '#17313a'; context.lineWidth = 1; context.stroke();
     }
   });
+  context.globalAlpha = 1;
 }
 
-async function loadImageSource(source: Blob | string, name: string): Promise<ScalarImage> {
+interface LoadedImage {
+  image: ScalarImage;
+  rgba: Uint8ClampedArray;
+}
+
+async function loadImageSource(source: Blob | string, name: string): Promise<LoadedImage> {
   const blob = typeof source === 'string' ? await fetch(source).then((response) => {
     if (!response.ok) throw new Error(`Could not load ${name}.`);
     return response.blob();
@@ -213,7 +249,7 @@ async function loadImageSource(source: Blob | string, name: string): Promise<Sca
   for (let index = 0; index < rgba.length; index += 4) {
     values.push(0.2126 * rgba[index]! + 0.7152 * rgba[index + 1]! + 0.0722 * rgba[index + 2]!);
   }
-  return { name, width, height, values };
+  return { image: { name, width, height, values }, rgba: new Uint8ClampedArray(rgba) };
 }
 
 function metricValue(value: number): string {
@@ -296,8 +332,13 @@ export function mountApp(root: HTMLElement): () => void {
               <figure class="data-stage">
                 <figcaption><span>Point-cloud preview</span><strong id="point-meta">32 points · 2D</strong></figcaption>
                 <div id="point-preview" class="point-cloud-stage" role="img" aria-label="Interactive point-cloud preview"></div>
-                <div id="point-interaction" class="stage-hint" hidden>Drag to rotate · scroll to zoom</div>
+                <div id="point-interaction" class="stage-hint">Drag points · double-click for exact coordinates</div>
               </figure>
+              <div id="filtration-player" class="filtration-player">
+                <button id="toggle-filtration" class="animation-action" type="button" disabled><span aria-hidden="true">▶</span> Play filtration</button>
+                <label><span>Filtration scale</span><input id="filtration-progress" type="range" min="0" max="1000" value="1000" disabled></label>
+                <output id="filtration-value">Compute first</output>
+              </div>
               <div class="parameter-heading"><div><h3>Filtration settings</h3><p>Only parameters used by the selected complex are shown.</p></div></div>
               <div id="parameter-fields" class="parameter-grid"></div>
               <details class="advanced-input">
@@ -318,10 +359,12 @@ export function mountApp(root: HTMLElement): () => void {
                 <figcaption><span>Image-to-topology pipeline</span><strong id="image-meta">Loading doughnut…</strong></figcaption>
                 <div class="image-stage__body">
                   <div class="image-copy"><div><h3>Bring your own image</h3><p>Processing stays in this tab. Images are resized to at most 256 × 256.</p></div><label class="upload-button" for="image-file">Choose an image</label><input id="image-file" class="visually-hidden" type="file" accept="image/*"></div>
-                  <div class="image-pipeline" aria-label="Grayscale and binary mask previews">
-                    <div class="image-frame"><span>1 · Grayscale input</span><canvas id="image-preview" aria-label="Current grayscale image"></canvas></div>
+                  <div class="image-pipeline" aria-label="Original color, grayscale, and binary mask previews">
+                    <div class="image-frame"><span>1 · Original</span><canvas id="color-preview" aria-label="Original color image"></canvas></div>
                     <span class="pipeline-arrow" aria-hidden="true">→</span>
-                    <div class="image-frame"><span>2 · Binary mask</span><canvas id="mask-preview" aria-label="Current binary mask"></canvas></div>
+                    <div class="image-frame"><span>2 · Grayscale</span><canvas id="image-preview" aria-label="Current grayscale image"></canvas></div>
+                    <span class="pipeline-arrow" aria-hidden="true">→</span>
+                    <div class="image-frame"><span>3 · Binary mask</span><canvas id="mask-preview" aria-label="Current binary mask"></canvas></div>
                   </div>
                   <div class="segmentation-controls">
                     <label class="binary-toggle"><input id="binarize" type="checkbox" checked><span>Use binary mask</span></label>
@@ -379,6 +422,10 @@ export function mountApp(root: HTMLElement): () => void {
   const pointPreview = element<HTMLDivElement>('#point-preview');
   const pointInteraction = element<HTMLDivElement>('#point-interaction');
   const pointMeta = element<HTMLElement>('#point-meta');
+  const filtrationPlayer = element<HTMLDivElement>('#filtration-player');
+  const toggleFiltration = element<HTMLButtonElement>('#toggle-filtration');
+  const filtrationProgress = element<HTMLInputElement>('#filtration-progress');
+  const filtrationValue = element<HTMLOutputElement>('#filtration-value');
   const imageSelect = element<HTMLSelectElement>('#image-sample');
   const imageFile = element<HTMLInputElement>('#image-file');
   const filtration = element<HTMLSelectElement>('#filtration');
@@ -388,6 +435,7 @@ export function mountApp(root: HTMLElement): () => void {
   const thresholdValue = element<HTMLOutputElement>('#threshold-value');
   const autoThreshold = element<HTMLButtonElement>('#auto-threshold');
   const foreground = element<HTMLSelectElement>('#foreground');
+  const colorPreview = element<HTMLCanvasElement>('#color-preview');
   const imagePreview = element<HTMLCanvasElement>('#image-preview');
   const maskPreview = element<HTMLCanvasElement>('#mask-preview');
   const imageMeta = element<HTMLElement>('#image-meta');
@@ -409,20 +457,66 @@ export function mountApp(root: HTMLElement): () => void {
   let automaticThreshold = true;
   let cachedImage: ScalarImage | null = null;
   let cachedSmoothedImage: ScalarImage | null = null;
+  let colorPreviewSource: { image: ScalarImage; rgba: Uint8ClampedArray } | null = null;
+  let activeSimplicialResult: SimplicialResult | null = null;
+  let filtrationRatio = 1;
+  let showFiltrationPlayhead = false;
+  let filtrationFrame: number | null = null;
   const pointVisualization = mountPointCloudVisualization(pointPreview);
 
   const setMode = (mode: 'simplicial' | 'cubical') => {
     modeTabs.forEach((tab) => tab.setAttribute('aria-selected', String(tab.dataset.mode === mode)));
     simplicialPanel.hidden = mode !== 'simplicial';
     cubicalPanel.hidden = mode !== 'cubical';
+    if (mode === 'cubical' && activeSimplicialResult) {
+      stopFiltrationAnimation();
+      filtrationRatio = 1;
+      showFiltrationPlayhead = false;
+      syncPointPreview();
+      drawDiagram(diagram, activeSimplicialResult.persistence.strongestPairs);
+    }
+  };
+
+  const stopFiltrationAnimation = () => {
+    if (filtrationFrame !== null) cancelAnimationFrame(filtrationFrame);
+    filtrationFrame = null;
+  };
+
+  const currentFiltrationValue = () => {
+    if (!activeSimplicialResult?.visualization.supported) return 0;
+    const { minFiltration, maxFiltration } = activeSimplicialResult.visualization;
+    return minFiltration + (maxFiltration - minFiltration) * filtrationRatio;
   };
 
   const syncPointPreview = () => {
     const dimension = currentPoints[0]?.length ?? 0;
-    pointVisualization.render(currentPoints);
+    const visualization = activeSimplicialResult?.visualization;
+    const activeEdges = dimension === 2 && visualization?.supported
+      ? visualization.edges.filter((edge) => edge.filtration <= currentFiltrationValue())
+      : [];
+    pointVisualization.render(currentPoints, {
+      edges: activeEdges,
+      onPointsChange: dimension === 2 ? (nextPoints) => {
+        stopFiltrationAnimation();
+        activeSimplicialResult = null;
+        filtrationRatio = 1;
+        showFiltrationPlayhead = false;
+        updateWorkspace({
+          status: 'idle',
+          latestResult: null,
+          error: null,
+          activity: 'Point coordinates changed. Compute persistence to rebuild the filtration.',
+        });
+        setPoints(nextPoints);
+        pointSampleSelect.value = 'custom';
+      } : undefined,
+    });
     pointMeta.textContent = `${currentPoints.length} points · ${dimension}D`;
     pointPreview.setAttribute('aria-label', `Interactive point cloud with ${currentPoints.length} points in ${dimension} dimensions`);
-    pointInteraction.hidden = dimension !== 3;
+    pointInteraction.textContent = dimension === 3
+      ? 'Drag to rotate · scroll to zoom'
+      : 'Drag points · double-click for exact coordinates';
+    filtrationPlayer.hidden = dimension !== 2;
   };
 
   const syncImagePreview = (image: ScalarImage) => {
@@ -440,6 +534,11 @@ export function mountApp(root: HTMLElement): () => void {
     threshold.disabled = !binarize.checked;
     autoThreshold.disabled = !binarize.checked;
     foreground.disabled = !binarize.checked;
+    drawColorImage(
+      colorPreview,
+      image,
+      colorPreviewSource?.image === image ? colorPreviewSource.rgba : undefined,
+    );
     drawImage(imagePreview, image);
     const preview = binarize.checked
       ? closeBinaryImage(binarizeImage(smoothedImage, resolvedThreshold, foreground.value as ForegroundPolarity).image)
@@ -456,16 +555,17 @@ export function mountApp(root: HTMLElement): () => void {
   };
 
   let imageLoadGeneration = 0;
-  const setImage = (image: ScalarImage, label: string) => {
+  const setImage = (image: ScalarImage, label: string, rgba?: Uint8ClampedArray) => {
     automaticThreshold = true;
+    colorPreviewSource = rgba ? { image, rgba } : null;
     updateWorkspace({ currentImage: image, activity: `Loaded ${label}.`, error: null });
   };
 
   const loadDoughnut = async () => {
     const generation = ++imageLoadGeneration;
     updateWorkspace({ activity: 'Loading the doughnut example…', error: null });
-    const image = await loadImageSource('/samples/donut.jpg', 'chocolate-doughnut');
-    if (generation === imageLoadGeneration) setImage(image, 'chocolate doughnut');
+    const loaded = await loadImageSource('/samples/donut.jpg', 'chocolate-doughnut');
+    if (generation === imageLoadGeneration) setImage(loaded.image, 'chocolate doughnut', loaded.rgba);
   };
 
   const renderParameters = (kind: ComplexKind) => {
@@ -503,8 +603,45 @@ export function mountApp(root: HTMLElement): () => void {
     return parameters as ComplexParameters;
   };
 
+  const renderFiltrationPosition = (withPlayhead: boolean) => {
+    if (!activeSimplicialResult?.visualization.supported) return;
+    showFiltrationPlayhead = withPlayhead;
+    filtrationProgress.value = String(Math.round(filtrationRatio * 1000));
+    const t = currentFiltrationValue();
+    filtrationValue.value = `t = ${metricValue(t)}`;
+    toggleFiltration.textContent = filtrationFrame !== null
+      ? 'Pause filtration'
+      : filtrationRatio >= 1 ? 'Replay filtration' : 'Play filtration';
+    syncPointPreview();
+    drawDiagram(
+      diagram,
+      activeSimplicialResult.persistence.strongestPairs,
+      withPlayhead ? { playhead: t, axisMaximum: activeSimplicialResult.visualization.maxFiltration } : undefined,
+    );
+  };
+
+  const resetFiltration = (message?: string) => {
+    stopFiltrationAnimation();
+    activeSimplicialResult = null;
+    filtrationRatio = 1;
+    showFiltrationPlayhead = false;
+    toggleFiltration.disabled = true;
+    filtrationProgress.disabled = true;
+    toggleFiltration.textContent = 'Play filtration';
+    filtrationValue.value = 'Compute first';
+    if (message) updateWorkspace({ status: 'idle', latestResult: null, error: null, activity: message });
+  };
+
   const updateResult = (result: ComputeResult | null) => {
     if (!result) {
+      resetFiltration();
+      metricFeatures.textContent = '—';
+      metricEssential.textContent = '—';
+      metricLoops.textContent = '—';
+      metricRuntime.textContent = '—';
+      resultDescriptionElement.textContent = 'Connected components, loops, and higher-dimensional features will appear here after computation.';
+      resultJson.textContent = '';
+      copyResult.disabled = true;
       drawDiagram(diagram, []);
       return;
     }
@@ -515,16 +652,46 @@ export function mountApp(root: HTMLElement): () => void {
     resultDescriptionElement.textContent = resultDescription(result);
     resultJson.textContent = JSON.stringify(result, null, 2);
     copyResult.disabled = false;
-    drawDiagram(diagram, result.persistence.strongestPairs);
+    if (result.kind === 'simplicial') {
+      if (activeSimplicialResult !== result) {
+        stopFiltrationAnimation();
+        activeSimplicialResult = result;
+        filtrationRatio = 1;
+        showFiltrationPlayhead = false;
+      }
+      const enabled = result.visualization.supported;
+      toggleFiltration.disabled = !enabled;
+      filtrationProgress.disabled = !enabled;
+      filtrationProgress.value = '1000';
+      filtrationValue.value = enabled
+        ? `t = ${metricValue(result.visualization.maxFiltration)}`
+        : result.visualization.reason ?? 'Unavailable';
+      toggleFiltration.textContent = 'Replay filtration';
+      syncPointPreview();
+      drawDiagram(
+        diagram,
+        result.persistence.strongestPairs,
+        showFiltrationPlayhead
+          ? { playhead: currentFiltrationValue(), axisMaximum: result.visualization.maxFiltration }
+          : undefined,
+      );
+    } else {
+      resetFiltration();
+      drawDiagram(diagram, result.persistence.strongestPairs);
+    }
   };
 
   modeTabs.forEach((tab) => tab.addEventListener('click', () => setMode(tab.dataset.mode as 'simplicial' | 'cubical')));
 
   pointSampleSelect.addEventListener('change', () => {
-    if (pointSampleSelect.value !== 'custom') setPoints(pointSample(pointSampleSelect.value as PointSampleId));
+    if (pointSampleSelect.value !== 'custom') {
+      resetFiltration('Point cloud changed. Compute persistence to build its filtration.');
+      setPoints(pointSample(pointSampleSelect.value as PointSampleId));
+    }
   });
 
   complexSelect.addEventListener('change', () => {
+    resetFiltration('Complex changed. Compute persistence to build its filtration.');
     const kind = complexSelect.value as ComplexKind;
     const dimension = currentPoints[0]?.length;
     if (kind === 'k-fold-cover' && dimension !== 3) {
@@ -540,6 +707,7 @@ export function mountApp(root: HTMLElement): () => void {
   pointsInput.addEventListener('input', () => {
     try {
       currentPoints = parsePointInput(pointsInput.value);
+      resetFiltration('Point coordinates changed. Compute persistence to rebuild the filtration.');
       pointSampleSelect.value = identifyPointSample(currentPoints);
       pointFeedback.textContent = `${currentPoints.length} points ready.`;
       pointFeedback.dataset.status = 'valid';
@@ -548,6 +716,35 @@ export function mountApp(root: HTMLElement): () => void {
       pointFeedback.textContent = error instanceof Error ? error.message : 'Invalid point data.';
       pointFeedback.dataset.status = 'error';
     }
+  });
+
+  toggleFiltration.addEventListener('click', () => {
+    if (!activeSimplicialResult?.visualization.supported) return;
+    if (filtrationFrame !== null) {
+      stopFiltrationAnimation();
+      renderFiltrationPosition(true);
+      return;
+    }
+    if (filtrationRatio >= 1) filtrationRatio = 0;
+    const duration = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 900 : 5_200;
+    const startedAt = performance.now() - filtrationRatio * duration;
+    const tick = (now: number) => {
+      filtrationRatio = Math.min(1, (now - startedAt) / duration);
+      renderFiltrationPosition(true);
+      if (filtrationRatio < 1) filtrationFrame = requestAnimationFrame(tick);
+      else {
+        filtrationFrame = null;
+        renderFiltrationPosition(true);
+      }
+    };
+    filtrationFrame = requestAnimationFrame(tick);
+    renderFiltrationPosition(true);
+  });
+
+  filtrationProgress.addEventListener('input', () => {
+    stopFiltrationAnimation();
+    filtrationRatio = Number(filtrationProgress.value) / 1000;
+    renderFiltrationPosition(true);
   });
 
   imageSelect.addEventListener('change', () => {
@@ -563,10 +760,10 @@ export function mountApp(root: HTMLElement): () => void {
     const file = imageFile.files?.[0];
     if (!file) return;
     const generation = ++imageLoadGeneration;
-    void loadImageSource(file, file.name).then((image) => {
+    void loadImageSource(file, file.name).then((loaded) => {
       if (generation !== imageLoadGeneration) return;
       imageSelect.value = 'custom';
-      setImage(image, file.name);
+      setImage(loaded.image, file.name, loaded.rgba);
     }).catch((error: unknown) => updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) }));
   });
 
@@ -626,6 +823,7 @@ export function mountApp(root: HTMLElement): () => void {
       lastSyncedRequest = state.latestRequest;
       const request = state.latestRequest as { kind?: string };
       if (request.kind === 'simplicial') {
+        resetFiltration();
         const simplicial = state.latestRequest as {
           complex: ComplexKind;
           points: number[][];
@@ -677,6 +875,7 @@ export function mountApp(root: HTMLElement): () => void {
   void loadDoughnut().catch((error: unknown) => updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) }));
 
   return () => {
+    stopFiltrationAnimation();
     unsubscribe();
     pointVisualization.unmount();
   };
