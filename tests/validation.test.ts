@@ -55,6 +55,15 @@ describe('agent input validation', () => {
     })).toThrow(/between 0 and 255/);
   });
 
+  it('accepts real-photo samples and rejects removed synthetic masks', () => {
+    expect(validateCubicalRequest({ kind: 'cubical', source: 'sample', sample: 'glasses' })).toMatchObject({ sample: 'glasses' });
+    expect(() => validateCubicalRequest({
+      kind: 'cubical',
+      source: 'sample',
+      sample: 'ring' as 'glasses',
+    })).toThrow(/donut, pretzel, glasses/);
+  });
+
   it('rejects requests whose worst-case complex exceeds the browser budget', () => {
     const points = Array.from({ length: 256 }, (_, index) => [index, index % 7, index % 11]);
     expect(() => validateSimplicialRequest({

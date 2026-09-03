@@ -40,7 +40,8 @@ export interface SimplicialRequest {
   parameters?: ComplexParameters;
 }
 
-export type ImageSampleId = 'ring' | 'two-rings' | 'two-blobs';
+export const IMAGE_SAMPLE_IDS = ['donut', 'pretzel', 'glasses'] as const;
+export type ImageSampleId = (typeof IMAGE_SAMPLE_IDS)[number];
 
 export interface ScalarImage {
   name: string;

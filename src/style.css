@@ -155,7 +155,7 @@ button.primary-action:disabled { opacity: .48; cursor: wait; }
 .image-pipeline { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: center; }
 .image-frame { min-width: 0; display: grid; gap: 7px; }
 .image-frame > span { color: #9db6bd; font: 500 8px/1 'IBM Plex Mono', monospace; letter-spacing: .1em; text-transform: uppercase; }
-.image-frame canvas { width: 100%; aspect-ratio: 1; display: block; border: 1px solid rgba(157, 182, 189, .28); border-radius: 10px; background: #fff; }
+.image-frame canvas { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; display: block; border: 1px solid rgba(157, 182, 189, .28); border-radius: 10px; background: #fff; }
 #mask-preview { image-rendering: pixelated; }
 .pipeline-arrow { color: #5ac8e8; font: 400 20px/1 Manrope, sans-serif; }
 .segmentation-controls { padding: 13px; display: grid; grid-template-columns: auto minmax(140px, 1fr) auto minmax(120px, .65fr); gap: 13px; align-items: end; border: 1px solid rgba(157, 182, 189, .15); border-radius: 10px; background: rgba(255, 255, 255, .035); }

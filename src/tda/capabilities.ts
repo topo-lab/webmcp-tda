@@ -1,4 +1,4 @@
-import type { ComplexKind } from './types';
+import { IMAGE_SAMPLE_IDS, type ComplexKind } from './types';
 
 export interface ComplexCapability {
   id: ComplexKind;
@@ -110,6 +110,7 @@ export const CAPABILITIES = {
   cubical: {
     dimensions: [2],
     input: 'current uploaded image, built-in sample, or row-major scalar values',
+    samples: IMAGE_SAMPLE_IDS,
     filtrations: ['sublevel', 'superlevel'],
     preprocessing: '5×5 Gaussian denoise, Otsu or manual thresholding, and binary morphological closing by default; grayscale may be preserved explicitly',
     construction: 'vertex lower-star cubical filtration over F2',

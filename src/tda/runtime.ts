@@ -1,5 +1,5 @@
 import { getWorkspaceState, updateWorkspace } from '../state';
-import { imageSample } from './samples';
+import { loadImageSample } from './imageSources';
 import { computeClient } from './computeClient';
 import type { ComputeResult, CubicalRequest, ScalarImage, SimplicialRequest } from './types';
 import { validateCubicalRequest, validateSimplicialRequest } from './validation';
@@ -21,7 +21,9 @@ export class TdaRuntime {
   async computeCubical(request: CubicalRequest, signal?: AbortSignal): Promise<ComputeResult> {
     validateCubicalRequest(request);
     if ((request.source ?? 'current') === 'sample') {
-      updateWorkspace({ currentImage: imageSample(request.sample!) });
+      updateWorkspace({ activity: `Loading the ${request.sample} photo…`, error: null });
+      const loaded = await loadImageSample(request.sample!, signal);
+      updateWorkspace({ currentImage: loaded.image, currentImageRgba: loaded.rgba });
     } else if (request.source === 'values') {
       updateWorkspace({
         currentImage: {
@@ -30,6 +32,7 @@ export class TdaRuntime {
           height: request.height!,
           values: [...request.values!],
         },
+        currentImageRgba: null,
       });
     }
     return this.run(request, signal);

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ComputeClient, type WorkerTransport } from '../src/tda/computeClient';
-import { imageSample } from '../src/tda/samples';
-import type { ComputeResult, SimplicialRequest, WorkerRequestMessage, WorkerResponseMessage } from '../src/tda/types';
+import type { ComputeResult, ScalarImage, SimplicialRequest, WorkerRequestMessage, WorkerResponseMessage } from '../src/tda/types';
 
 class FakeWorker implements WorkerTransport {
   onmessage: ((event: MessageEvent<WorkerResponseMessage>) => void) | null = null;
@@ -29,6 +28,13 @@ const request: SimplicialRequest = {
   points: [[0, 0], [1, 0]],
 };
 
+const currentImage: ScalarImage = {
+  name: 'test-image',
+  width: 2,
+  height: 2,
+  values: [0, 255, 255, 0],
+};
+
 const result: ComputeResult = {
   kind: 'simplicial',
   complex: 'rips',
@@ -49,9 +55,9 @@ describe('ComputeClient cancellation', () => {
       return worker;
     });
     const controller = new AbortController();
-    const first = client.run(request, imageSample('ring'), controller.signal);
+    const first = client.run(request, currentImage, controller.signal);
     const firstExpectation = expect(first).rejects.toMatchObject({ name: 'AbortError' });
-    const second = client.run(request, imageSample('ring'));
+    const second = client.run(request, currentImage);
 
     expect(workers).toHaveLength(1);
     expect(workers[0]!.messages).toHaveLength(1);

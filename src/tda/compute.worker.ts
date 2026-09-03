@@ -1,7 +1,6 @@
 /// <reference lib="webworker" />
 
 import { GudhiPersistentCohomology, type AlphaComplexResult } from 'tda-wasm';
-import { imageSample } from './samples';
 import { binarizeImage, closeBinaryImage, gaussianBlurImage } from './imageProcessing';
 import { summarizeComplex, summarizePersistence } from './summary';
 import type {
@@ -217,7 +216,6 @@ async function computeSimplicial(request: SimplicialRequest): Promise<Simplicial
 
 function resolveImage(request: CubicalRequest, currentImage?: ScalarImage): ScalarImage {
   const source = request.source ?? 'current';
-  if (source === 'sample') return imageSample(request.sample!);
   if (source === 'values') {
     return { name: 'agent-values', width: request.width!, height: request.height!, values: request.values! };
   }

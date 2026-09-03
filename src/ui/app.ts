@@ -1,6 +1,7 @@
 import { getWorkspaceState, subscribeWorkspace, updateWorkspace } from '../state';
 import { CAPABILITIES } from '../tda/capabilities';
-import { imageSample, POINT_SAMPLE_IDS, pointSample, type PointSampleId } from '../tda/samples';
+import { IMAGE_SAMPLES, loadImageSample, loadImageSource } from '../tda/imageSources';
+import { POINT_SAMPLE_IDS, pointSample, type PointSampleId } from '../tda/samples';
 import { binarizeImage, closeBinaryImage, gaussianBlurImage, otsuThreshold, type ForegroundPolarity } from '../tda/imageProcessing';
 import { tdaRuntime } from '../tda/runtime';
 import { defaultMaximumSimplexDimension } from '../tda/validation';
@@ -9,6 +10,7 @@ import type {
   ComplexParameters,
   ComputeResult,
   CubicalRequest,
+  ImageSampleId,
   SerializablePair,
   ScalarImage,
   SimplicialResult,
@@ -205,35 +207,6 @@ function drawDiagram(
   context.globalAlpha = 1;
 }
 
-interface LoadedImage {
-  image: ScalarImage;
-  rgba: Uint8ClampedArray;
-}
-
-async function loadImageSource(source: Blob | string, name: string): Promise<LoadedImage> {
-  const blob = typeof source === 'string' ? await fetch(source).then((response) => {
-    if (!response.ok) throw new Error(`Could not load ${name}.`);
-    return response.blob();
-  }) : source;
-  const bitmap = await createImageBitmap(blob);
-  const scale = Math.min(1, 256 / Math.max(bitmap.width, bitmap.height));
-  const width = Math.max(2, Math.round(bitmap.width * scale));
-  const height = Math.max(2, Math.round(bitmap.height * scale));
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext('2d', { willReadFrequently: true });
-  if (!context) throw new Error('Canvas is unavailable.');
-  context.drawImage(bitmap, 0, 0, width, height);
-  bitmap.close();
-  const rgba = context.getImageData(0, 0, width, height).data;
-  const values: number[] = [];
-  for (let index = 0; index < rgba.length; index += 4) {
-    values.push(0.2126 * rgba[index]! + 0.7152 * rgba[index + 1]! + 0.0722 * rgba[index + 2]!);
-  }
-  return { image: { name, width, height, values }, rgba: new Uint8ClampedArray(rgba) };
-}
-
 function metricValue(value: number): string {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(value);
 }
@@ -346,7 +319,7 @@ export function mountApp(root: HTMLElement): () => void {
 
             <form id="cubical-panel" class="input-form" role="tabpanel" aria-label="Cubical persistence controls" hidden>
               <div class="control-grid control-grid--three">
-                <label>Example image<select id="image-sample"><option value="donut">Chocolate doughnut photo</option><option value="ring">Ring mask</option><option value="two-rings">Two rings mask</option><option value="two-blobs">Two blobs mask</option><option value="custom">Custom / agent image</option></select></label>
+                <label>Example image<select id="image-sample">${Object.entries(IMAGE_SAMPLES).map(([value, sample]) => `<option value="${value}">${sample.label} photo</option>`).join('')}<option value="custom">Custom / agent image</option></select></label>
                 <label>Filtration<select id="filtration"><option value="sublevel">Sublevel · foreground first</option><option value="superlevel">Superlevel · background first</option></select></label>
                 <label>Downsample<select id="downsample"><option value="1">1× · full resolution</option><option value="2" selected>2× · faster</option><option value="4">4× · fastest</option></select></label>
               </div>
@@ -455,7 +428,6 @@ export function mountApp(root: HTMLElement): () => void {
   let automaticThreshold = true;
   let cachedImage: ScalarImage | null = null;
   let cachedSmoothedImage: ScalarImage | null = null;
-  let colorPreviewSource: { image: ScalarImage; rgba: Uint8ClampedArray } | null = null;
   let activeSimplicialResult: SimplicialResult | null = null;
   let filtrationRatio = 1;
   let showFiltrationPlayhead = false;
@@ -550,7 +522,7 @@ export function mountApp(root: HTMLElement): () => void {
     drawColorImage(
       colorPreview,
       image,
-      colorPreviewSource?.image === image ? colorPreviewSource.rgba : undefined,
+      getWorkspaceState().currentImage === image ? getWorkspaceState().currentImageRgba ?? undefined : undefined,
     );
     drawImage(imagePreview, image);
     const preview = binarize.checked
@@ -570,15 +542,15 @@ export function mountApp(root: HTMLElement): () => void {
   let imageLoadGeneration = 0;
   const setImage = (image: ScalarImage, label: string, rgba?: Uint8ClampedArray) => {
     automaticThreshold = true;
-    colorPreviewSource = rgba ? { image, rgba } : null;
-    updateWorkspace({ currentImage: image, activity: `Loaded ${label}.`, error: null });
+    updateWorkspace({ currentImage: image, currentImageRgba: rgba ?? null, activity: `Loaded ${label}.`, error: null });
   };
 
-  const loadDoughnut = async () => {
+  const loadSelectedImageSample = async (id: ImageSampleId) => {
     const generation = ++imageLoadGeneration;
-    updateWorkspace({ activity: 'Loading the doughnut example…', error: null });
-    const loaded = await loadImageSource('/samples/donut.jpg', 'chocolate-doughnut');
-    if (generation === imageLoadGeneration) setImage(loaded.image, 'chocolate doughnut', loaded.rgba);
+    const sample = IMAGE_SAMPLES[id];
+    updateWorkspace({ activity: `Loading the ${sample.label.toLowerCase()} example…`, error: null });
+    const loaded = await loadImageSample(id);
+    if (generation === imageLoadGeneration) setImage(loaded.image, sample.label.toLowerCase(), loaded.rgba);
   };
 
   const renderParameters = (kind: ComplexKind) => {
@@ -774,12 +746,9 @@ export function mountApp(root: HTMLElement): () => void {
   });
 
   imageSelect.addEventListener('change', () => {
-    if (imageSelect.value === 'donut') {
-      void loadDoughnut().catch((error: unknown) => updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) }));
-    } else if (imageSelect.value !== 'custom') {
-      imageLoadGeneration += 1;
-      setImage(imageSample(imageSelect.value as 'ring' | 'two-rings' | 'two-blobs'), imageSelect.options[imageSelect.selectedIndex]?.text ?? imageSelect.value);
-    }
+    if (imageSelect.value === 'custom') return;
+    void loadSelectedImageSample(imageSelect.value as ImageSampleId)
+      .catch((error: unknown) => updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) }));
   });
 
   imageFile.addEventListener('change', () => {
@@ -872,7 +841,7 @@ export function mountApp(root: HTMLElement): () => void {
         foreground.value = cubical.foreground ?? 'dark';
         filtration.value = cubical.filtration ?? 'sublevel';
         downsample.value = String(cubical.downsample ?? 1);
-        imageSelect.value = cubical.source === 'sample' ? cubical.sample ?? 'ring' : cubical.source === 'values' ? 'custom' : imageSelect.value;
+        imageSelect.value = cubical.source === 'sample' ? cubical.sample ?? 'donut' : cubical.source === 'values' ? 'custom' : imageSelect.value;
       }
     }
     webMcpStatus.textContent = state.webMcpStatus === 'unsupported'
@@ -898,7 +867,7 @@ export function mountApp(root: HTMLElement): () => void {
   setPoints(currentPoints);
   renderParameters('rips');
   syncImagePreview(getWorkspaceState().currentImage);
-  void loadDoughnut().catch((error: unknown) => updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) }));
+  void loadSelectedImageSample('donut').catch((error: unknown) => updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) }));
 
   return () => {
     stopFiltrationAnimation();

@@ -1,5 +1,4 @@
 import type { ComputeResult, ScalarImage } from './tda/types';
-import { imageSample } from './tda/samples';
 
 export type ServiceStatus = 'idle' | 'computing' | 'ready' | 'error';
 export type WebMcpStatus = 'registering' | 'ready' | 'unsupported' | 'error';
@@ -10,6 +9,7 @@ export interface WorkspaceState {
   activity: string;
   error: string | null;
   currentImage: ScalarImage;
+  currentImageRgba: Uint8ClampedArray | null;
   latestResult: ComputeResult | null;
   latestRequest: unknown;
 }
@@ -19,7 +19,8 @@ const state: WorkspaceState = {
   webMcpStatus: 'registering',
   activity: 'Ready for a human or agent request.',
   error: null,
-  currentImage: imageSample('ring'),
+  currentImage: { name: 'loading-example', width: 2, height: 2, values: [255, 255, 255, 255] },
+  currentImageRgba: null,
   latestResult: null,
   latestRequest: null,
 };

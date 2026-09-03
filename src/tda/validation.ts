@@ -1,4 +1,4 @@
-import { COMPLEX_KINDS, type CubicalRequest, type SimplicialRequest } from './types';
+import { COMPLEX_KINDS, IMAGE_SAMPLE_IDS, type CubicalRequest, type SimplicialRequest } from './types';
 
 const PRIME_FIELDS = new Set([2, 3, 5, 7, 11, 13, 17, 19]);
 export const MAX_COORDINATE_MAGNITUDE = 1_000_000;
@@ -148,8 +148,8 @@ export function validateCubicalRequest(input: CubicalRequest): CubicalRequest {
     }
     input.values.forEach((value, index) => assertFinite(value, `values[${index}]`));
   }
-  if (source === 'sample' && !['ring', 'two-rings', 'two-blobs'].includes(input.sample ?? '')) {
-    throw new Error('sample must be ring, two-rings, or two-blobs.');
+  if (source === 'sample' && !IMAGE_SAMPLE_IDS.some((sample) => sample === input.sample)) {
+    throw new Error(`sample must be ${IMAGE_SAMPLE_IDS.join(', ')}.`);
   }
   if (input.threshold !== undefined && (!Number.isFinite(input.threshold) || input.threshold < 0 || input.threshold > 255)) {
     throw new Error('threshold must be a finite number between 0 and 255.');

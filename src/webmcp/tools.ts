@@ -1,6 +1,6 @@
 import { CAPABILITIES } from '../tda/capabilities';
 import { tdaRuntime, type TdaRuntime } from '../tda/runtime';
-import type { CubicalRequest, SimplicialRequest } from '../tda/types';
+import { IMAGE_SAMPLE_IDS, type CubicalRequest, type SimplicialRequest } from '../tda/types';
 import type { WebMcpTool } from './types';
 import { MAX_COORDINATE_MAGNITUDE, MAX_LINEAR_SCALE, MAX_SQUARED_SCALE } from '../tda/validation';
 
@@ -88,7 +88,7 @@ export function createWebMcpTools(runtime: TdaRuntime = tdaRuntime): WebMcpTool[
       description: 'Denoise an image, convert it to a binary foreground mask, close small mask holes, then compute 2D vertex lower-star cubical persistence over F2. Accepts the current uploaded image, a built-in sample, or supplied row-major scalar values. Omit threshold to use Otsu auto-thresholding. Runs locally in a Web Worker and updates the visible shared result.',
       inputSchema: objectSchema({
         source: { type: 'string', enum: ['current', 'sample', 'values'], default: 'current' },
-        sample: { type: 'string', enum: ['ring', 'two-rings', 'two-blobs'] },
+        sample: { type: 'string', enum: [...IMAGE_SAMPLE_IDS], description: 'A bundled real photograph with visually meaningful holes.' },
         width: { type: 'integer', minimum: 2, maximum: 256 },
         height: { type: 'integer', minimum: 2, maximum: 256 },
         values: {
