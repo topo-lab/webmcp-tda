@@ -1,0 +1,8 @@
+{
+  "date": "2026-09-02T22:36:24Z",
+  "build_mode": "release",
+  "cxx_standard": "c++20",
+  "emscripten": "4.0.15",
+  "gudhi_include_dir": "/usr/local/include",
+  "geometry": "src/geom over third_party/geogram_delaunay (no CGAL)"
+}

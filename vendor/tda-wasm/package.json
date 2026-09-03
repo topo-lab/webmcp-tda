@@ -1,0 +1,76 @@
+{
+  "name": "tda-wasm",
+  "version": "0.2.0",
+  "description": "Vendored browser runtime for WebMCP TDA.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./persistent_cohomology": {
+      "types": "./dist/persistent_cohomology.d.ts",
+      "import": "./dist/persistent_cohomology.js",
+      "default": "./dist/persistent_cohomology.js"
+    },
+    "./persistent_cohomology_types": {
+      "types": "./dist/persistent_cohomology_types.d.ts",
+      "import": "./dist/persistent_cohomology_types.js",
+      "default": "./dist/persistent_cohomology_types.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js",
+      "default": "./dist/types.js"
+    },
+    "./dist/*": "./dist/*",
+    "./package.json": "./package.json"
+  },
+  "type": "module",
+  "keywords": [
+    "gudhi",
+    "topological-data-analysis",
+    "tda",
+    "persistent-homology",
+    "persistence-diagrams",
+    "alpha-complex",
+    "gudhi-rips",
+    "cech-complex",
+    "ellipsoid-cech-complex",
+    "wing-complex",
+    "cubical-complex",
+    "bottleneck-distance",
+    "wasserstein-distance",
+    "optimal-transport",
+    "greedy-wasserstein",
+    "betti-numbers",
+    "persistence-landscapes",
+    "persistence-images",
+    "webassembly",
+    "wasm",
+    "computational-topology",
+    "computational-geometry",
+    "typescript"
+  ],
+  "author": "TopoLab",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/topo-lab/tda-wasm"
+  },
+  "bugs": {
+    "url": "https://github.com/topo-lab/tda-wasm/issues"
+  },
+  "homepage": "https://github.com/topo-lab/tda-wasm#readme",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/",
+    "LICENSE",
+    "THIRD_PARTY_LICENSES.md"
+  ]
+}
