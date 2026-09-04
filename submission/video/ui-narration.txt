@@ -1,0 +1,7 @@
+This is WebMCP TDA, a browser-local persistent homology workbench shared by a person and an AI agent.
+
+A person can edit a point cloud, reveal its coordinate axes, choose a complex, and compute persistence. The filtration player advances the growing cover and simplices together with the persistence diagram.
+
+The image workflow keeps every processing stage visible. Here a pretzel photograph becomes grayscale, then a binary mask, before cubical persistence is computed in WebAssembly.
+
+The page exposes four typed WebMCP tools. An agent can inspect capabilities, submit a point cloud, analyze the current image or a scalar grid, and read the latest result. Agent calls update this same visible workbench, so the person can inspect and continue the analysis.

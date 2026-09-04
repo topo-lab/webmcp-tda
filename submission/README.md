@@ -7,7 +7,8 @@ This folder contains the copy and media for the WebMCP Challenge submission.
 - `devpost-submission.md`: field-by-field Devpost answers and project story.
 - `images/thumbnail-3x2.png`: 1800 by 1200 project thumbnail.
 - `images/01-point-cloud-workbench.png` through `05-webmcp-tools.png`: 3:2 gallery images.
-- `video/webmcp-tda-demo-draft.mp4`: 1 minute 57 second narrated draft video with audio.
+- `video/webmcp-tda-demo-draft.mp4`: 1 minute 57 second narrated slideshow draft with audio.
+- `video/webmcp-tda-ui-demo.mp4`: 52 second narrated automated browser demo. The Cypress runner is visible beside the app.
 - `video/demo-script.md`: the preferred ChatGPT in-app browser recording plan.
 - `video/narration.txt`: narration used by the draft.
 - `capture-media.cy.ts`: reproducible Cypress screenshot capture script.
