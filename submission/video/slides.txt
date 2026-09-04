@@ -1,0 +1,15 @@
+file '../images/thumbnail-3x2.png'
+duration 14
+file '../images/01-point-cloud-workbench.png'
+duration 18
+file '../images/02-persistence-result.png'
+duration 18
+file '../images/03-image-pipeline.png'
+duration 18
+file '../images/04-image-result.png'
+duration 18
+file '../images/05-webmcp-tools.png'
+duration 20
+file '../images/thumbnail-3x2.png'
+duration 12
+file '../images/thumbnail-3x2.png'

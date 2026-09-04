@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { CAPABILITIES } from '../src/tda/capabilities';
 import { TdaRuntime, type ComputeBackend } from '../src/tda/runtime';
 import type { ComputeResult } from '../src/tda/types';
 import { createWebMcpTools } from '../src/webmcp/tools';
@@ -20,6 +21,13 @@ const fakeResult: ComputeResult = {
   visualization: {
     supported: true,
     reason: null,
+    simplices: [
+      { vertices: [0], filtration: 0 },
+      { vertices: [1], filtration: 0 },
+      { vertices: [2], filtration: 0 },
+      { vertices: [0, 1], filtration: 1 },
+    ],
+    simplexCount: 4,
     edges: [{ vertices: [0, 1], filtration: 1 }],
     edgeCount: 1,
     truncated: false,
@@ -51,6 +59,10 @@ describe('WebMCP tool contract', () => {
       'tda_get_capabilities',
       'tda_get_latest_result',
     ]);
+    const simplicial = tools.find((tool) => tool.name === 'tda_compute_simplicial_persistence')!;
+    const schema = simplicial.inputSchema as { properties: { complex: { enum: string[] } } };
+    expect(schema.properties.complex.enum).toEqual(['rips', 'alpha', 'cech']);
+    expect(CAPABILITIES.simplicialComplexes.map((complex) => complex.id)).toEqual(['rips', 'alpha', 'cech']);
   });
 
   it('passes the WebMCP cancellation signal into the computation backend', async () => {

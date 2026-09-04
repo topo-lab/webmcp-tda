@@ -1,6 +1,9 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  resolve: {
+    dedupe: ['react', 'react-dom', 'playcanvas'],
+  },
   server: {
     host: '127.0.0.1',
     port: 5180,

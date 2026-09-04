@@ -1,6 +1,10 @@
 node_modules/
 /dist/
+/coverage/
+/cypress/screenshots/
+/cypress/videos/
 .DS_Store
 *.log
 .env*
 !.env.example
+.gstack/

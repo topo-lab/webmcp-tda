@@ -2,7 +2,7 @@ import { CAPABILITIES } from '../tda/capabilities';
 import { tdaRuntime, type TdaRuntime } from '../tda/runtime';
 import { IMAGE_SAMPLE_IDS, type CubicalRequest, type SimplicialRequest } from '../tda/types';
 import type { WebMcpTool } from './types';
-import { MAX_COORDINATE_MAGNITUDE, MAX_LINEAR_SCALE, MAX_SQUARED_SCALE } from '../tda/validation';
+import { MAX_COORDINATE_MAGNITUDE, MAX_LINEAR_SCALE } from '../tda/validation';
 
 const objectSchema = (properties: Record<string, unknown>, required: string[] = []) => ({
   type: 'object',
@@ -20,25 +20,34 @@ const parametersSchema = objectSchema({
     maximum: 3,
     description: 'Optional override. Defaults to 2 for 2D input and 3 for 3D input.',
   },
-  neighborhoodSize: { type: 'integer', minimum: 2, description: 'Local neighborhood for ellipsoid or Wing fitting.' },
-  axesMode: {
-    description: 'Ellipsoid tangent-to-normal ratio >= 1, or "pca" for data-derived semi-axes.',
-    oneOf: [{ type: 'number', minimum: 1 }, { type: 'string', const: 'pca' }],
-  },
-  maxFiltration: { type: 'number', exclusiveMinimum: 0, maximum: MAX_LINEAR_SCALE, description: 'Ellipsoid filtration cutoff.' },
-  q: { type: 'number', minimum: 0, maximum: 1, description: 'Wing spine-to-wing ratio.' },
-  theta: { type: 'number', exclusiveMinimum: 0, maximum: Math.PI / 2, description: 'Wing angle in radians.' },
-  maxEps: { type: 'number', exclusiveMinimum: 0, maximum: MAX_LINEAR_SCALE, description: 'Wing epsilon cutoff.' },
-  stepSize: { type: 'number', exclusiveMinimum: 0, maximum: MAX_LINEAR_SCALE, description: 'Box filtration grid resolution.' },
-  alpha: { type: 'number', minimum: 0, maximum: 1, description: 'Box growth aggressiveness.' },
-  maxSteps: { type: 'integer', minimum: 1, maximum: 100 },
-  k: { type: 'integer', minimum: 1, maximum: 4, description: 'k-fold cover multiplicity.' },
-  maxSquaredRadius: { type: 'number', exclusiveMinimum: 0, maximum: MAX_SQUARED_SCALE, description: 'k-fold cover squared-radius cutoff.' },
-  numLandmarks: { type: 'integer', minimum: 2, description: 'Weak witness landmark count.' },
-  maxAlphaSquare: { type: 'number', exclusiveMinimum: 0, maximum: MAX_SQUARED_SCALE, description: 'Weak witness squared relaxation cutoff.' },
 });
 
 const emptySchema = objectSchema({});
+
+const EMPTY_KEYS = new Set<string>();
+const SIMPLICIAL_KEYS = new Set(['complex', 'points', 'coefficientField', 'resultLimit', 'parameters']);
+const SIMPLICIAL_PARAMETER_KEYS = new Set(['maxEdgeLength', 'maxRadius', 'maxSimplexDimension']);
+const CUBICAL_KEYS = new Set([
+  'source',
+  'sample',
+  'width',
+  'height',
+  'values',
+  'binarize',
+  'threshold',
+  'foreground',
+  'filtration',
+  'downsample',
+  'resultLimit',
+]);
+
+function assertOnlyKnownKeys(input: unknown, allowed: ReadonlySet<string>, label: string): asserts input is Record<string, unknown> {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    throw new Error(`${label} must be an object.`);
+  }
+  const unexpected = Object.keys(input).find((key) => !allowed.has(key));
+  if (unexpected) throw new Error(`${label} contains unsupported field "${unexpected}".`);
+}
 
 export function createWebMcpTools(runtime: TdaRuntime = tdaRuntime): WebMcpTool[] {
   return [
@@ -47,18 +56,21 @@ export function createWebMcpTools(runtime: TdaRuntime = tdaRuntime): WebMcpTool[
       title: 'Inspect TDA capabilities',
       description: 'List the supported simplicial complexes, required parameter names, input limits, filtration units, and cubical-image modes before selecting a computation.',
       inputSchema: emptySchema,
-      annotations: { readOnlyHint: true, untrustedContentHint: false },
-      execute: async () => CAPABILITIES,
+      annotations: { readOnlyHint: true, untrustedContentHint: false, consequentialHint: false },
+      execute: async (input) => {
+        assertOnlyKnownKeys(input, EMPTY_KEYS, 'input');
+        return CAPABILITIES;
+      },
     },
     {
       name: 'tda_compute_simplicial_persistence',
       title: 'Compute simplicial persistence',
-      description: 'Compute one-parameter persistent homology for a supplied 2D or 3D point cloud. Use tda_get_capabilities first when choosing among Rips, Alpha, Čech, ellipsoid Rips, ellipsoid Čech, Wing, Box, exact k-fold cover, and Euclidean weak witness complexes. Runs locally in a Web Worker and updates the visible shared result.',
+      description: 'Compute one-parameter persistent homology for a supplied 2D or 3D point cloud using a Vietoris–Rips, Alpha, or Čech complex. Runs locally in a Web Worker and updates the visible shared result.',
       inputSchema: objectSchema({
         complex: {
           type: 'string',
-          enum: ['rips', 'alpha', 'cech', 'ellipsoid-rips', 'ellipsoid-cech', 'wing', 'box', 'k-fold-cover', 'witness'],
-          description: 'Complex family. Wing requires 2D points. k-fold-cover requires 3D points and is capped at 48 points.',
+          enum: ['rips', 'alpha', 'cech'],
+          description: 'Complex family: Vietoris–Rips, Alpha, or Čech.',
         },
         points: {
           type: 'array',
@@ -70,17 +82,23 @@ export function createWebMcpTools(runtime: TdaRuntime = tdaRuntime): WebMcpTool[
             maxItems: 3,
             items: { type: 'number', minimum: -MAX_COORDINATE_MAGNITUDE, maximum: MAX_COORDINATE_MAGNITUDE },
           },
-          description: 'Point coordinates. Every point must have the same length, either 2 or 3. General limit: 256 points; k-fold-cover limit: 48.',
+          description: 'Point coordinates. Every point must have the same length, either 2 or 3. Limit: 256 points.',
         },
         coefficientField: { type: 'integer', enum: [2, 3, 5, 7, 11, 13, 17, 19], default: 2 },
         resultLimit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
         parameters: parametersSchema,
       }, ['complex', 'points']),
-      annotations: { readOnlyHint: false, untrustedContentHint: false },
-      execute: async (input, options) => runtime.computeSimplicial({
-        kind: 'simplicial',
-        ...input,
-      } as SimplicialRequest, options.signal),
+      annotations: { readOnlyHint: false, untrustedContentHint: false, consequentialHint: false },
+      execute: async (input, options) => {
+        assertOnlyKnownKeys(input, SIMPLICIAL_KEYS, 'input');
+        if (input.parameters !== undefined) {
+          assertOnlyKnownKeys(input.parameters, SIMPLICIAL_PARAMETER_KEYS, 'parameters');
+        }
+        return runtime.computeSimplicial({
+          kind: 'simplicial',
+          ...input,
+        } as SimplicialRequest, options.signal);
+      },
     },
     {
       name: 'tda_compute_cubical_persistence',
@@ -104,19 +122,25 @@ export function createWebMcpTools(runtime: TdaRuntime = tdaRuntime): WebMcpTool[
         downsample: { type: 'integer', enum: [1, 2, 4], default: 1 },
         resultLimit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
       }),
-      annotations: { readOnlyHint: false, untrustedContentHint: false },
-      execute: async (input, options) => runtime.computeCubical({
-        kind: 'cubical',
-        ...input,
-      } as CubicalRequest, options.signal),
+      annotations: { readOnlyHint: false, untrustedContentHint: false, consequentialHint: false },
+      execute: async (input, options) => {
+        assertOnlyKnownKeys(input, CUBICAL_KEYS, 'input');
+        return runtime.computeCubical({
+          kind: 'cubical',
+          ...input,
+        } as CubicalRequest, options.signal);
+      },
     },
     {
       name: 'tda_get_latest_result',
       title: 'Read latest TDA result',
       description: 'Read the latest persistence result and current image metadata from the workspace shared by the human and agent.',
       inputSchema: emptySchema,
-      annotations: { readOnlyHint: true, untrustedContentHint: false },
-      execute: async () => runtime.getLatestResult(),
+      annotations: { readOnlyHint: true, untrustedContentHint: false, consequentialHint: false },
+      execute: async (input) => {
+        assertOnlyKnownKeys(input, EMPTY_KEYS, 'input');
+        return runtime.getLatestResult();
+      },
     },
   ];
 }

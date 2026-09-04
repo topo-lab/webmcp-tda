@@ -3,7 +3,6 @@ import { COMPLEX_KINDS, IMAGE_SAMPLE_IDS, type CubicalRequest, type SimplicialRe
 const PRIME_FIELDS = new Set([2, 3, 5, 7, 11, 13, 17, 19]);
 export const MAX_COORDINATE_MAGNITUDE = 1_000_000;
 export const MAX_LINEAR_SCALE = 4_000_000;
-export const MAX_SQUARED_SCALE = 16_000_000_000_000;
 export const MAX_POTENTIAL_SIMPLICES = 2_000_000;
 
 export function defaultMaximumSimplexDimension(points: number[][]): 2 | 3 {
@@ -35,12 +34,6 @@ export function validateSimplicialRequest(input: SimplicialRequest): SimplicialR
     });
   });
 
-  if (input.complex === 'wing' && dimension !== 2) throw new Error('Wing complexes require 2D points.');
-  if (input.complex === 'k-fold-cover') {
-    if (dimension !== 3) throw new Error('k-fold cover complexes require 3D points.');
-    if (input.points.length > 48) throw new Error('k-fold cover input is capped at 48 points for browser safety.');
-  }
-
   const coefficientField = input.coefficientField ?? 2;
   if (!PRIME_FIELDS.has(coefficientField)) {
     throw new Error('coefficientField must be one of 2, 3, 5, 7, 11, 13, 17, or 19.');
@@ -54,44 +47,13 @@ export function validateSimplicialRequest(input: SimplicialRequest): SimplicialR
   if (!Number.isInteger(maxSimplexDimension) || maxSimplexDimension < 1 || maxSimplexDimension > 3) {
     throw new Error('maxSimplexDimension must be an integer between 1 and 3.');
   }
-  const positiveParameters: Array<[keyof typeof parameters, number | undefined, number]> = [
-    ['maxEdgeLength', parameters.maxEdgeLength, MAX_LINEAR_SCALE],
-    ['maxRadius', parameters.maxRadius, MAX_LINEAR_SCALE],
-    ['maxFiltration', parameters.maxFiltration, MAX_LINEAR_SCALE],
-    ['maxEps', parameters.maxEps, MAX_LINEAR_SCALE],
-    ['stepSize', parameters.stepSize, MAX_LINEAR_SCALE],
-    ['maxSquaredRadius', parameters.maxSquaredRadius, MAX_SQUARED_SCALE],
-    ['maxAlphaSquare', parameters.maxAlphaSquare, MAX_SQUARED_SCALE],
+  const positiveParameters: Array<[keyof typeof parameters, number | undefined]> = [
+    ['maxEdgeLength', parameters.maxEdgeLength],
+    ['maxRadius', parameters.maxRadius],
   ];
-  positiveParameters.forEach(([name, value, maximum]) => {
-    if (value !== undefined && (!Number.isFinite(value) || value <= 0 || value > maximum)) {
-      throw new Error(`${name} must be positive and at most ${maximum} when provided.`);
-    }
-  });
-  if (parameters.axesMode !== undefined && parameters.axesMode !== 'pca' &&
-      (!Number.isFinite(parameters.axesMode) || parameters.axesMode < 1)) {
-    throw new Error('axesMode must be "pca" or a number greater than or equal to 1.');
-  }
-  if (parameters.q !== undefined && (!Number.isFinite(parameters.q) || parameters.q < 0 || parameters.q > 1)) {
-    throw new Error('q must be between 0 and 1.');
-  }
-  if (parameters.theta !== undefined &&
-      (!Number.isFinite(parameters.theta) || parameters.theta <= 0 || parameters.theta > Math.PI / 2)) {
-    throw new Error('theta must be in (0, π/2].');
-  }
-  if (parameters.alpha !== undefined &&
-      (!Number.isFinite(parameters.alpha) || parameters.alpha < 0 || parameters.alpha > 1)) {
-    throw new Error('alpha must be between 0 and 1.');
-  }
-  const integerParameters: Array<[keyof typeof parameters, number | undefined, number, number]> = [
-    ['neighborhoodSize', parameters.neighborhoodSize, 2, Math.min(64, input.points.length)],
-    ['maxSteps', parameters.maxSteps, 1, 100],
-    ['k', parameters.k, 1, Math.min(4, Math.max(1, input.points.length - 3))],
-    ['numLandmarks', parameters.numLandmarks, 2, Math.min(64, input.points.length)],
-  ];
-  integerParameters.forEach(([name, value, minimum, maximum]) => {
-    if (value !== undefined && (!Number.isInteger(value) || value < minimum || value > maximum)) {
-      throw new Error(`${name} must be an integer between ${minimum} and ${maximum}.`);
+  positiveParameters.forEach(([name, value]) => {
+    if (value !== undefined && (!Number.isFinite(value) || value <= 0 || value > MAX_LINEAR_SCALE)) {
+      throw new Error(`${name} must be positive and at most ${MAX_LINEAR_SCALE} when provided.`);
     }
   });
   const complexSize = potentialSimplexCount(input);
@@ -115,15 +77,8 @@ function binomial(n: number, k: number): number {
 }
 
 export function potentialSimplexCount(input: SimplicialRequest): number {
-  const cappedKinds = new Set(['rips', 'cech', 'ellipsoid-rips', 'ellipsoid-cech', 'wing', 'box']);
-  let vertices: number;
-  if (input.complex === 'witness') {
-    vertices = input.parameters?.numLandmarks ?? Math.min(16, input.points.length);
-  } else if (cappedKinds.has(input.complex)) {
-    vertices = input.points.length;
-  } else {
-    return 0;
-  }
+  if (input.complex === 'alpha') return 0;
+  const vertices = input.points.length;
   const maximumDimension = input.parameters?.maxSimplexDimension ?? defaultMaximumSimplexDimension(input.points);
   let total = 0;
   for (let simplexSize = 1; simplexSize <= maximumDimension + 1; simplexSize += 1) {

@@ -10,6 +10,7 @@ export interface WebMcpTool {
   annotations?: {
     readOnlyHint?: boolean;
     untrustedContentHint?: boolean;
+    consequentialHint?: boolean;
   };
   execute: (input: Record<string, unknown>, options: ToolExecuteOptions) => Promise<unknown>;
 }

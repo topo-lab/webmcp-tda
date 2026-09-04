@@ -20,7 +20,7 @@ import {
 } from './validation';
 
 const workerScope = self as DedicatedWorkerGlobalScope;
-const MAX_VISUALIZATION_EDGES = 5_000;
+const MAX_VISUALIZATION_SIMPLICES = 20_000;
 let enginePromise: Promise<GudhiPersistentCohomology> | null = null;
 
 function getEngine(): Promise<GudhiPersistentCohomology> {
@@ -42,24 +42,10 @@ function flat(points: number[][]): number[] {
 }
 
 function defaults(request: SimplicialRequest): Required<Pick<ComplexParameters, 'maxSimplexDimension'>> & ComplexParameters {
-  const pointCount = request.points.length;
   return {
     maxSimplexDimension: request.parameters?.maxSimplexDimension ?? defaultMaximumSimplexDimension(request.points),
     maxEdgeLength: request.parameters?.maxEdgeLength ?? 1.5,
     maxRadius: request.parameters?.maxRadius ?? 1,
-    neighborhoodSize: request.parameters?.neighborhoodSize ?? Math.min(8, pointCount),
-    axesMode: request.parameters?.axesMode ?? 'pca',
-    maxFiltration: request.parameters?.maxFiltration,
-    q: request.parameters?.q ?? 0.3,
-    theta: request.parameters?.theta ?? Math.PI / 4,
-    maxEps: request.parameters?.maxEps,
-    stepSize: request.parameters?.stepSize ?? 0.1,
-    alpha: request.parameters?.alpha ?? 0.5,
-    maxSteps: request.parameters?.maxSteps ?? 20,
-    k: request.parameters?.k ?? 2,
-    maxSquaredRadius: request.parameters?.maxSquaredRadius ?? 4,
-    numLandmarks: request.parameters?.numLandmarks ?? Math.min(16, pointCount),
-    maxAlphaSquare: request.parameters?.maxAlphaSquare ?? 1,
   };
 }
 
@@ -69,33 +55,6 @@ function reportedParameters(kind: SimplicialRequest['complex'], parameters: Comp
     case 'rips': return { maxEdgeLength: parameters.maxEdgeLength, maxSimplexDimension };
     case 'alpha': return { maxSimplexDimension };
     case 'cech': return { maxRadius: parameters.maxRadius, maxSimplexDimension };
-    case 'ellipsoid-rips':
-    case 'ellipsoid-cech':
-      return {
-        neighborhoodSize: parameters.neighborhoodSize,
-        axesMode: parameters.axesMode,
-        maxFiltration: parameters.maxFiltration,
-        maxSimplexDimension,
-      };
-    case 'wing':
-      return {
-        q: parameters.q,
-        theta: parameters.theta,
-        neighborhoodSize: parameters.neighborhoodSize,
-        maxEps: parameters.maxEps,
-        maxSimplexDimension,
-      };
-    case 'box':
-      return {
-        stepSize: parameters.stepSize,
-        alpha: parameters.alpha,
-        maxSteps: parameters.maxSteps,
-        maxSimplexDimension,
-      };
-    case 'k-fold-cover':
-      return { k: parameters.k, maxSquaredRadius: parameters.maxSquaredRadius, maxSimplexDimension };
-    case 'witness':
-      return { numLandmarks: parameters.numLandmarks, maxAlphaSquare: parameters.maxAlphaSquare, maxSimplexDimension };
   }
 }
 
@@ -136,50 +95,29 @@ async function computeSimplicial(request: SimplicialRequest): Promise<Simplicial
     case 'cech':
       complex = engine.computeCechComplex(points, dimension, parameters.maxRadius!, maxDimension);
       break;
-    case 'ellipsoid-rips':
-      complex = engine.computeEllipsoidRipsComplex(
-        points, dimension, parameters.neighborhoodSize!, parameters.axesMode!, maxDimension, parameters.maxFiltration,
-      );
-      break;
-    case 'ellipsoid-cech':
-      complex = engine.computeEllipsoidCechComplex(
-        points, dimension, parameters.neighborhoodSize!, parameters.axesMode!, maxDimension, parameters.maxFiltration,
-      );
-      break;
-    case 'wing':
-      complex = engine.computeWingComplex(
-        points, parameters.q!, parameters.theta!, parameters.neighborhoodSize!, maxDimension, parameters.maxEps,
-      );
-      break;
-    case 'box':
-      complex = engine.computeBoxFiltration(
-        points, dimension, parameters.stepSize!, parameters.alpha!, parameters.maxSteps, maxDimension, false,
-      );
-      break;
-    case 'k-fold-cover':
-      complex = engine.computeKFoldCoverComplex(points, parameters.k!, parameters.maxSquaredRadius, maxDimension);
-      break;
-    case 'witness':
-      complex = engine.computeEuclideanWitnessComplex(
-        points, dimension, parameters.numLandmarks!, parameters.maxAlphaSquare!, maxDimension,
-      );
-      break;
   }
 
   const coefficientField = request.coefficientField ?? 2;
   const persistence = engine.computePersistence(complex.simplices, coefficientField);
-  const canAnimate = dimension === 2 && request.complex !== 'witness';
-  const allEdges = canAnimate
-    ? complex.simplices.filter((simplex) =>
-      simplex.vertices.length === 2
-      && simplex.vertices.every((vertex) => vertex >= 0 && vertex < request.points.length),
-    )
+  const visualizableSimplices = complex.simplices.filter((simplex) =>
+    simplex.vertices.every((vertex) => vertex >= 0 && vertex < request.points.length),
+  );
+  const canAnimate = visualizableSimplices.length <= MAX_VISUALIZATION_SIMPLICES;
+  const simplices = canAnimate
+    ? visualizableSimplices.map((simplex) => ({ vertices: [...simplex.vertices], filtration: simplex.filtration }))
     : [];
-  const edges = allEdges.slice(0, MAX_VISUALIZATION_EDGES).map((simplex) => ({
+  const allEdges = visualizableSimplices.filter((simplex) => simplex.vertices.length === 2);
+  const edges = canAnimate ? allEdges.map((simplex) => ({
     vertices: [simplex.vertices[0]!, simplex.vertices[1]!] as [number, number],
     filtration: simplex.filtration,
-  }));
-  const finiteFiltrations = edges.map((edge) => edge.filtration).filter(Number.isFinite);
+  })) : [];
+  let minFiltration = 0;
+  let maxFiltration = 1e-9;
+  complex.simplices.forEach((simplex) => {
+    if (!Number.isFinite(simplex.filtration)) return;
+    minFiltration = Math.min(minFiltration, simplex.filtration);
+    maxFiltration = Math.max(maxFiltration, simplex.filtration);
+  });
   return {
     kind: 'simplicial',
     complex: request.complex,
@@ -192,16 +130,16 @@ async function computeSimplicial(request: SimplicialRequest): Promise<Simplicial
     complexSummary: summarizeComplex(complex.simplices),
     visualization: {
       supported: canAnimate,
-      reason: dimension !== 2
-        ? 'Filtration playback is available for 2D point clouds.'
-        : request.complex === 'witness'
-          ? 'Witness vertices use an internal landmark order, so playback is hidden rather than drawing incorrect edges.'
-          : null,
+      reason: canAnimate
+        ? null
+        : `Filtration playback is limited to ${MAX_VISUALIZATION_SIMPLICES.toLocaleString()} simplices.`,
+      simplices,
+      simplexCount: visualizableSimplices.length,
       edges,
       edgeCount: allEdges.length,
-      truncated: allEdges.length > edges.length,
-      minFiltration: 0,
-      maxFiltration: Math.max(1e-9, ...finiteFiltrations),
+      truncated: !canAnimate,
+      minFiltration,
+      maxFiltration,
     },
     persistence: summarizePersistence(persistence, request.resultLimit ?? 50),
     interpretation: {

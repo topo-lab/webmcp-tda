@@ -1,14 +1,4 @@
-export const COMPLEX_KINDS = [
-  'rips',
-  'alpha',
-  'cech',
-  'ellipsoid-rips',
-  'ellipsoid-cech',
-  'wing',
-  'box',
-  'k-fold-cover',
-  'witness',
-] as const;
+export const COMPLEX_KINDS = ['rips', 'alpha', 'cech'] as const;
 
 export type ComplexKind = (typeof COMPLEX_KINDS)[number];
 
@@ -16,19 +6,6 @@ export interface ComplexParameters {
   maxEdgeLength?: number;
   maxRadius?: number;
   maxSimplexDimension?: number;
-  neighborhoodSize?: number;
-  axesMode?: number | 'pca';
-  maxFiltration?: number;
-  q?: number;
-  theta?: number;
-  maxEps?: number;
-  stepSize?: number;
-  alpha?: number;
-  maxSteps?: number;
-  k?: number;
-  maxSquaredRadius?: number;
-  numLandmarks?: number;
-  maxAlphaSquare?: number;
 }
 
 export interface SimplicialRequest {
@@ -84,6 +61,11 @@ export interface PersistenceSummary {
   strongestPairs: SerializablePair[];
 }
 
+export interface FiltrationSimplex {
+  vertices: number[];
+  filtration: number;
+}
+
 export interface FiltrationEdge {
   vertices: [number, number];
   filtration: number;
@@ -92,6 +74,8 @@ export interface FiltrationEdge {
 export interface SimplicialVisualization {
   supported: boolean;
   reason: string | null;
+  simplices: FiltrationSimplex[];
+  simplexCount: number;
   edges: FiltrationEdge[];
   edgeCount: number;
   truncated: boolean;

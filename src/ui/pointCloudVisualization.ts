@@ -1,16 +1,28 @@
-import { createElement, lazy, Suspense } from 'react';
+import { createElement, lazy, Suspense, useMemo } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { createFiltration } from 'tda-viz-react/filtration';
 import {
   PointCloud2D,
   type PointCloud2DEdge,
   type PointCloud2DInteractionMode,
 } from 'tda-viz-react/2d';
+import type { ComplexKind, FiltrationSimplex } from '../tda/types';
+
+export interface PointCloud3DFiltration {
+  complex: ComplexKind;
+  simplices: readonly FiltrationSimplex[];
+  maxSimplexDimension: number;
+  value: number;
+  showCover: boolean;
+}
 
 export interface PointCloudRenderOptions {
   edges?: readonly PointCloud2DEdge[];
   diskRadii?: readonly number[];
   fitDiskRadii?: readonly number[];
   interactionMode?: PointCloud2DInteractionMode;
+  showAxes?: boolean;
+  filtration3d?: PointCloud3DFiltration;
   onPointsChange?: (points: number[][]) => void;
 }
 
@@ -19,8 +31,16 @@ export interface PointCloudVisualization {
   unmount(): void;
 }
 
-function normalize3d(points: number[][]): number[] {
-  if (points.length === 0) return [];
+const ORIGIN_2D = [0, 0] as const;
+
+export function normalizePointCloud3D(
+  points: number[][],
+  complex: ComplexKind,
+  simplices: readonly FiltrationSimplex[],
+) {
+  if (points.length === 0) {
+    return { points: [], simplices: [], scaleFiltrationValue: (value: number) => value };
+  }
   const center = [0, 1, 2].map((axis) =>
     points.reduce((sum, point) => sum + (point[axis] ?? 0), 0) / points.length,
   );
@@ -30,16 +50,50 @@ function normalize3d(points: number[][]): number[] {
     (point[2] ?? 0) - center[2]!,
   ]);
   const radius = Math.max(0.001, ...centered.map(([x, y, z]) => Math.hypot(x!, y!, z!)));
-  return centered.flatMap(([x, y, z]) => [x! / radius, y! / radius, z! / radius]);
+  const filtrationScale = complex === 'alpha' ? radius * radius : radius;
+  const scaleFiltrationValue = (value: number) => value / filtrationScale;
+  return {
+    points: centered.flatMap(([x, y, z]) => [x! / radius, y! / radius, z! / radius]),
+    simplices: simplices.map((simplex) => ({
+      vertices: [...simplex.vertices],
+      filtration: scaleFiltrationValue(simplex.filtration),
+    })),
+    scaleFiltrationValue,
+  };
 }
 
 const RotatablePointCloud3D = lazy(async () => {
-  const [{ PlayCanvasStage, PointCloud3D }, playcanvas] = await Promise.all([
+  const [{ Field3D, Nerve3D, PlayCanvasStage, PointCloud3D }, playcanvas] = await Promise.all([
     import('tda-viz-react/3d'),
     import('playcanvas'),
   ]);
-  return {
-    default: ({ points }: { points: number[][] }) => createElement(
+
+  function AnimatedPointCloud3D({ points, config }: { points: number[][]; config?: PointCloud3DFiltration }) {
+    const complex = config?.complex ?? 'rips';
+    const simplices = config?.simplices ?? [];
+    const scene = useMemo(
+      () => normalizePointCloud3D(points, complex, simplices),
+      [points, complex, simplices],
+    );
+    const maxSimplexDimension = config?.maxSimplexDimension;
+    const filtration = useMemo(() => {
+      if (maxSimplexDimension === undefined) return null;
+      return createFiltration({
+        cloud: {
+          points: scene.points,
+          weights: Array.from({ length: scene.points.length / 3 }, () => 0),
+          dimension: 3,
+        },
+        convention: complex,
+        complexType: complex,
+        maxSimplexDimension,
+        simplices: scene.simplices,
+        rawPairs: [],
+      });
+    }, [complex, maxSimplexDimension, scene.points, scene.simplices]);
+    const t = scene.scaleFiltrationValue(config?.value ?? 0);
+
+    return createElement(
       PlayCanvasStage,
       {
         className: 'point-cloud-3d',
@@ -57,14 +111,32 @@ const RotatablePointCloud3D = lazy(async () => {
           preserveDrawingBuffer: false,
         }),
       },
+      filtration && config?.showCover ? createElement(Field3D, {
+        key: 'field',
+        filtration,
+        t,
+        color: '#5ac8e8',
+        opacity: 0.1,
+      }) : null,
+      filtration ? createElement(Nerve3D, {
+        key: 'nerve',
+        filtration,
+        t,
+        edgeColor: '#78d4ea',
+        triangleColor: '#e85f3f',
+        triangleOpacity: 0.24,
+      }) : null,
       createElement(PointCloud3D, {
-        points: normalize3d(points),
+        key: 'points',
+        points: scene.points,
         dimension: 3,
-        color: '#78d4ea',
+        color: '#eefaff',
         size: 0.045,
       }),
-    ),
-  };
+    );
+  }
+
+  return { default: AnimatedPointCloud3D };
 });
 
 export function mountPointCloudVisualization(container: HTMLElement): PointCloudVisualization {
@@ -77,7 +149,7 @@ export function mountPointCloudVisualization(container: HTMLElement): PointCloud
         root.render(createElement(
           Suspense,
           { fallback: createElement('div', { className: 'point-cloud-loading' }, 'Preparing 3D view…') },
-          createElement(RotatablePointCloud3D, { points }),
+          createElement(RotatablePointCloud3D, { points, config: options.filtration3d }),
         ));
         return;
       }
@@ -88,6 +160,10 @@ export function mountPointCloudVisualization(container: HTMLElement): PointCloud
         diskRadii: options.diskRadii,
         fitDiskRadii: options.fitDiskRadii,
         interactionMode: options.interactionMode,
+        showAxes: options.showAxes,
+        projectionCenter: options.showAxes ? ORIGIN_2D : undefined,
+        axisColor: '#9db6bd',
+        axisLabelColor: '#b8d0d5',
         diskColor: '#5ac8e8',
         diskOpacity: 0.13,
         diskStrokeColor: '#78d4ea',

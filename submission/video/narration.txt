@@ -1,0 +1,15 @@
+This is WebMCP TDA, a browser-local workbench for persistent homology. It lets a person and an AI agent use the same data, computation, and visible result.
+
+A person can start with a point-cloud example, paste coordinates, or drag points directly in the preview. The app supports Vietoris-Rips, Alpha, and Cech complexes for two- and three-dimensional data.
+
+When persistence is computed, the page shows feature counts, essential classes, loops, and an interactive persistence diagram. The filtration player connects the mathematics to the picture by advancing the growing cover, simplices, and diagram playhead together.
+
+Images use a visible processing pipeline. The person can select a bundled photograph or upload an image, inspect its grayscale and binary-mask stages, choose the foreground, and compute cubical persistence locally in the browser.
+
+The WebMCP layer exposes four typed tools. An agent can inspect capabilities, submit a point cloud for simplicial persistence, analyze the current image or a supplied scalar grid, and read the latest shared result. Each tool uses a closed input schema, runtime validation, browser safety limits, and cancellation.
+
+Agent calls update the same workbench that the person sees. This makes the input and result inspectable. The person can continue from the agent's work by changing coordinates, parameters, or image settings and running another computation.
+
+The numerical backend is an MIT-licensed WebAssembly package. It runs in a Web Worker, so data stays in the active browser tab. The application is written in TypeScript and deployed as a static site on Cloudflare Pages.
+
+WebMCP TDA turns persistent homology into a shared computational instrument instead of a hidden chat operation.

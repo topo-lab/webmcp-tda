@@ -29,12 +29,20 @@ describe('agent input validation', () => {
     })).toThrow(/does not match dimension/);
   });
 
-  it('enforces geometry-specific dimensions', () => {
+  it('rejects point clouds above three ambient dimensions', () => {
     expect(() => validateSimplicialRequest({
       kind: 'simplicial',
-      complex: 'wing',
-      points: [[0, 0, 0], [1, 0, 0]],
-    })).toThrow(/require 2D/);
+      complex: 'rips',
+      points: [[0, 0, 0, 0], [1, 0, 0, 0]],
+    })).toThrow('Points must be 2D or 3D.');
+  });
+
+  it('rejects complex families outside Rips, Alpha, and Čech', () => {
+    expect(() => validateSimplicialRequest({
+      kind: 'simplicial',
+      complex: 'wing' as never,
+      points: [[0, 0], [1, 0]],
+    })).toThrow(/unsupported simplicial complex/i);
   });
 
   it('rejects cubical grids with the wrong value count', () => {

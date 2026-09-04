@@ -1,32 +1,40 @@
-import { getWorkspaceState, subscribeWorkspace, updateWorkspace } from '../state';
+import { getWorkspaceState, subscribeWorkspace, updateWorkspace, type WebMcpStatus } from '../state';
 import { CAPABILITIES } from '../tda/capabilities';
 import { IMAGE_SAMPLES, loadImageSample, loadImageSource } from '../tda/imageSources';
 import { POINT_SAMPLE_IDS, pointSample, type PointSampleId } from '../tda/samples';
 import { binarizeImage, closeBinaryImage, gaussianBlurImage, otsuThreshold, type ForegroundPolarity } from '../tda/imageProcessing';
 import { tdaRuntime } from '../tda/runtime';
 import { defaultMaximumSimplexDimension } from '../tda/validation';
+import { COMPLEX_KINDS } from '../tda/types';
 import type {
   ComplexKind,
   ComplexParameters,
   ComputeResult,
   CubicalRequest,
   ImageSampleId,
-  SerializablePair,
   ScalarImage,
   SimplicialResult,
 } from '../tda/types';
+import { renderPersistenceDiagram, unmountPersistenceDiagram } from './persistenceDiagram';
 import { mountPointCloudVisualization } from './pointCloudVisualization';
+
+export const WORKBENCH_COMPLEX_KINDS = [...COMPLEX_KINDS];
+
+const WEB_MCP_STATUS_LABELS: Record<WebMcpStatus, string> = {
+  registering: 'WebMCP checking',
+  ready: 'WebMCP ready',
+  unsupported: 'WebMCP Unavailable in this browser',
+  error: 'WebMCP error',
+};
+
+export function webMcpStatusLabel(status: WebMcpStatus): string {
+  return WEB_MCP_STATUS_LABELS[status];
+}
 
 const PARAMETER_DEFAULTS: Record<ComplexKind, ComplexParameters> = {
   rips: { maxEdgeLength: 0.7 },
   alpha: {},
   cech: { maxRadius: 0.5 },
-  'ellipsoid-rips': { neighborhoodSize: 6, axesMode: 'pca', maxFiltration: 1.5 },
-  'ellipsoid-cech': { neighborhoodSize: 6, axesMode: 'pca', maxFiltration: 1.5 },
-  wing: { q: 0.3, theta: 0.785, neighborhoodSize: 6, maxEps: 1.5 },
-  box: { stepSize: 0.1, alpha: 0.5, maxSteps: 20 },
-  'k-fold-cover': { k: 2, maxSquaredRadius: 4 },
-  witness: { numLandmarks: 12, maxAlphaSquare: 1 },
 };
 
 interface ParameterField {
@@ -47,47 +55,12 @@ const PARAMETER_FIELDS: Record<ComplexKind, ParameterField[]> = {
   cech: [
     { key: 'maxRadius', label: 'Maximum ball radius', help: 'Grow equal-radius balls around every point.', min: 0.05, step: 0.05 },
   ],
-  'ellipsoid-rips': [
-    { key: 'neighborhoodSize', label: 'Local neighbors', help: 'Points used to estimate local direction.', min: 2, max: 64, step: 1 },
-    { key: 'axesMode', label: 'Ellipsoid axes', help: 'Use PCA or a fixed tangent-to-normal ratio.', options: [{ label: 'PCA-derived', value: 'pca' }, { label: '1.5×', value: '1.5' }, { label: '2×', value: '2' }, { label: '3×', value: '3' }] },
-    { key: 'maxFiltration', label: 'Maximum filtration', help: 'Stop the anisotropic growth at this scale.', min: 0.05, step: 0.05 },
-  ],
-  'ellipsoid-cech': [
-    { key: 'neighborhoodSize', label: 'Local neighbors', help: 'Points used to estimate local direction.', min: 2, max: 64, step: 1 },
-    { key: 'axesMode', label: 'Ellipsoid axes', help: 'Use PCA or a fixed tangent-to-normal ratio.', options: [{ label: 'PCA-derived', value: 'pca' }, { label: '1.5×', value: '1.5' }, { label: '2×', value: '2' }, { label: '3×', value: '3' }] },
-    { key: 'maxFiltration', label: 'Maximum filtration', help: 'Stop the ellipsoid nerve at this scale.', min: 0.05, step: 0.05 },
-  ],
-  wing: [
-    { key: 'q', label: 'Wing ratio q', help: 'Controls spine-to-wing balance.', min: 0, max: 1, step: 0.05 },
-    { key: 'theta', label: 'Angle θ · radians', help: 'Maximum local turning angle.', min: 0.001, max: 1.571, step: 0.001 },
-    { key: 'neighborhoodSize', label: 'Local neighbors', help: 'Points used for the curvature estimate.', min: 2, max: 64, step: 1 },
-    { key: 'maxEps', label: 'Maximum epsilon', help: 'Stop the filtration at this scale.', min: 0.05, step: 0.05 },
-  ],
-  box: [
-    { key: 'stepSize', label: 'Step size', help: 'Resolution of the box-growth filtration.', min: 0.05, step: 0.05 },
-    { key: 'alpha', label: 'Growth rate α', help: 'Controls box expansion at each step.', min: 0, max: 1, step: 0.05 },
-    { key: 'maxSteps', label: 'Maximum steps', help: 'Number of filtration steps.', min: 1, max: 100, step: 1 },
-  ],
-  'k-fold-cover': [
-    { key: 'k', label: 'Cover multiplicity k', help: 'Required number of overlapping balls.', min: 1, max: 4, step: 1 },
-    { key: 'maxSquaredRadius', label: 'Maximum squared radius', help: 'Stop the multicover filtration here.', min: 0.1, step: 0.1 },
-  ],
-  witness: [
-    { key: 'numLandmarks', label: 'Landmarks', help: 'Representative vertices selected from the cloud.', min: 2, max: 64, step: 1 },
-    { key: 'maxAlphaSquare', label: 'Maximum squared relaxation', help: 'Tolerance for weak witnesses.', min: 0.1, step: 0.1 },
-  ],
 };
 
 const COMPLEX_LABELS: Record<ComplexKind, string> = {
   rips: 'Vietoris–Rips',
   alpha: 'Alpha',
   cech: 'Čech',
-  'ellipsoid-rips': 'Ellipsoid Rips',
-  'ellipsoid-cech': 'Ellipsoid Čech',
-  wing: 'Wing',
-  box: 'Box filtration',
-  'k-fold-cover': 'k-fold cover',
-  witness: 'Weak witness',
 };
 
 function element<T extends HTMLElement>(selector: string): T {
@@ -129,84 +102,6 @@ function drawColorImage(canvas: HTMLCanvasElement, image: ScalarImage, rgba?: Ui
   context.putImageData(new ImageData(new Uint8ClampedArray(rgba), image.width, image.height), 0, 0);
 }
 
-function drawDiagram(
-  canvas: HTMLCanvasElement,
-  pairs: SerializablePair[],
-  animation?: { playhead: number; axisMaximum: number },
-): void {
-  const context = canvas.getContext('2d');
-  if (!context) return;
-  const { width, height } = canvas;
-  const left = 54; const right = 18; const top = 30; const bottom = 46;
-  context.clearRect(0, 0, width, height);
-  context.fillStyle = '#ffffff';
-  context.fillRect(0, 0, width, height);
-  context.font = '11px IBM Plex Mono, monospace';
-  if (pairs.length === 0) {
-    context.fillStyle = '#71858b';
-    context.textAlign = 'center';
-    context.fillText('Run a computation to see the persistence diagram.', width / 2, height / 2);
-    return;
-  }
-  const finiteValues = pairs.flatMap((pair) => [pair.birth, pair.death === 'infinity' ? pair.birth : pair.death]);
-  const minimum = Math.min(0, ...finiteValues);
-  const maximum = Math.max(1, animation?.axisMaximum ?? 0, ...finiteValues);
-  const range = maximum - minimum || 1;
-  const upper = maximum + range * 0.08;
-  const scaleX = (value: number) => left + ((value - minimum) / (upper - minimum)) * (width - left - right);
-  const scaleY = (value: number) => height - bottom - ((value - minimum) / (upper - minimum)) * (height - top - bottom);
-
-  context.strokeStyle = '#e1e9e9';
-  context.fillStyle = '#71858b';
-  context.textAlign = 'center';
-  for (let tick = 0; tick <= 4; tick += 1) {
-    const value = minimum + ((upper - minimum) * tick) / 4;
-    const x = scaleX(value); const y = scaleY(value);
-    context.beginPath(); context.moveTo(x, top); context.lineTo(x, height - bottom); context.stroke();
-    context.beginPath(); context.moveTo(left, y); context.lineTo(width - right, y); context.stroke();
-    context.fillText(value.toFixed(2), x, height - 23);
-  }
-  context.strokeStyle = '#9fb2b6';
-  context.lineWidth = 1.25;
-  context.beginPath();
-  context.moveTo(scaleX(minimum), scaleY(minimum));
-  context.lineTo(scaleX(upper), scaleY(upper));
-  context.stroke();
-  context.setLineDash([4, 4]);
-  context.strokeStyle = '#c8d5d7';
-  context.beginPath(); context.moveTo(left, top); context.lineTo(width - right, top); context.stroke();
-  context.setLineDash([]);
-  context.fillStyle = '#526971';
-  context.fillText('birth', (left + width - right) / 2, height - 6);
-  context.save(); context.translate(14, (top + height - bottom) / 2); context.rotate(-Math.PI / 2); context.fillText('death', 0, 0); context.restore();
-  context.textAlign = 'left'; context.fillText('∞', width - right - 10, top - 8);
-
-  if (animation) {
-    const playhead = Math.max(minimum, Math.min(upper, animation.playhead));
-    context.save();
-    context.setLineDash([6, 5]);
-    context.strokeStyle = '#e85f3f';
-    context.lineWidth = 1.5;
-    context.beginPath(); context.moveTo(scaleX(playhead), top); context.lineTo(scaleX(playhead), height - bottom); context.stroke();
-    context.beginPath(); context.moveTo(left, scaleY(playhead)); context.lineTo(width - right, scaleY(playhead)); context.stroke();
-    context.restore();
-  }
-
-  pairs.forEach((pair) => {
-    const death = pair.death === 'infinity' ? upper : pair.death;
-    const alive = !animation || (pair.birth <= animation.playhead && (pair.death === 'infinity' || animation.playhead < pair.death));
-    context.fillStyle = pair.dimension === 0 ? '#2f86eb' : pair.dimension === 1 ? '#e85f3f' : '#7657d6';
-    context.globalAlpha = alive ? 1 : 0.22;
-    context.beginPath();
-    context.arc(scaleX(pair.birth), scaleY(death), pair.death === 'infinity' ? 5 : 4, 0, Math.PI * 2);
-    context.fill();
-    if (pair.death === 'infinity') {
-      context.strokeStyle = '#17313a'; context.lineWidth = 1; context.stroke();
-    }
-  });
-  context.globalAlpha = 1;
-}
-
 function metricValue(value: number): string {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(value);
 }
@@ -218,6 +113,51 @@ function coverDiskRadius(complex: ComplexKind, filtrationValue: number): number 
   if (complex === 'cech') return t;
   if (complex === 'alpha') return Math.sqrt(t);
   return null;
+}
+
+export function pointCloudFiltrationRadii(
+  dimension: number,
+  complex: ComplexKind | null,
+  currentFiltration: number,
+  maximumFiltration: number,
+  showCover: boolean,
+): { diskRadius: number | null; fitDiskRadius: number | null } {
+  if (dimension !== 2 || complex === null) return { diskRadius: null, fitDiskRadius: null };
+  return {
+    diskRadius: showCover ? coverDiskRadius(complex, currentFiltration) : null,
+    fitDiskRadius: coverDiskRadius(complex, maximumFiltration),
+  };
+}
+
+export function pointCloudFitMaximumFiltration(
+  complex: ComplexKind,
+  parameters: ComplexParameters,
+  computedMaximum: number | null,
+): number | null {
+  if (complex === 'rips' && Number.isFinite(parameters.maxEdgeLength)) return parameters.maxEdgeLength!;
+  if (complex === 'cech' && Number.isFinite(parameters.maxRadius)) return parameters.maxRadius!;
+  return computedMaximum;
+}
+
+export function imagePipelinePresentation(useBinaryMask: boolean): {
+  stepCount: '2' | '3';
+  grayscaleLabel: string;
+  ariaLabel: string;
+  maskDisabled: boolean;
+} {
+  return useBinaryMask
+    ? {
+        stepCount: '3',
+        grayscaleLabel: '2 · Grayscale',
+        ariaLabel: 'Original color, grayscale, and binary mask previews',
+        maskDisabled: false,
+      }
+    : {
+        stepCount: '3',
+        grayscaleLabel: '2 · Grayscale filtration',
+        ariaLabel: 'Original color, grayscale filtration, and dimmed unused binary mask preview',
+        maskDisabled: true,
+      };
 }
 
 export function parsePointInput(text: string): number[][] {
@@ -255,10 +195,7 @@ export function mountApp(root: HTMLElement): () => void {
         <a href="#workbench">Workbench</a>
         <a href="#agent-access">Agent access</a>
       </nav>
-      <div class="status-cluster" title="WebMCP registration status">
-        <span class="status-label">WebMCP</span>
-        <span id="webmcp-status" class="status-pill">checking</span>
-      </div>
+      <span id="webmcp-status" class="status-pill" title="WebMCP registration status">WebMCP checking</span>
     </header>
 
     <main id="top">
@@ -289,16 +226,17 @@ export function mountApp(root: HTMLElement): () => void {
             <form id="simplicial-panel" class="input-form" role="tabpanel" aria-label="Simplicial persistence controls">
               <div class="control-grid control-grid--three">
                 <label>Example dataset<select id="point-sample"><option value="circle">Circle · 2D</option><option value="figure-eight">Figure eight · 2D</option><option value="clusters">Two clusters · 2D</option><option value="sphere">Sphere · 3D</option><option value="custom">Custom / agent input</option></select></label>
-                <label>Complex<select id="complex-kind">${Object.entries(COMPLEX_LABELS).map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></label>
+                <label>Complex<select id="complex-kind">${WORKBENCH_COMPLEX_KINDS.map((value) => `<option value="${value}">${COMPLEX_LABELS[value]}</option>`).join('')}</select></label>
                 <label>Coefficient field<select id="coefficient-field"><option value="2">F₂</option><option value="3">F₃</option><option value="5">F₅</option><option value="7">F₇</option><option value="11">F₁₁</option></select></label>
               </div>
               <p id="complex-note" class="context-note"></p>
               <figure class="data-stage">
                 <figcaption><span>Point-cloud preview</span><strong id="point-meta">32 points · 2D</strong></figcaption>
                 <div id="point-preview" class="point-cloud-stage" role="img" aria-label="Interactive point-cloud preview"></div>
-                <div id="point-tools" class="point-tools" role="toolbar" aria-label="Point editing tools">
+                <div id="point-tools" class="point-tools" role="toolbar" aria-label="Point-cloud display and editing tools">
                   <button type="button" data-point-tool="move" aria-pressed="true"><span aria-hidden="true">↔</span> Move</button>
                   <button type="button" data-point-tool="edit" aria-pressed="false"><span aria-hidden="true">x,y</span> Edit</button>
+                  <button id="toggle-point-axes" type="button" aria-pressed="false" aria-label="Show axes and ticks"><span aria-hidden="true">＋</span> Axes</button>
                 </div>
                 <div id="point-interaction" class="stage-hint">Drag a point to move it</div>
               </figure>
@@ -327,12 +265,12 @@ export function mountApp(root: HTMLElement): () => void {
                 <figcaption><span>Image-to-topology pipeline</span><strong id="image-meta">Loading doughnut…</strong></figcaption>
                 <div class="image-stage__body">
                   <div class="image-copy"><div><h3>Bring your own image</h3><p>Processing stays in this tab. Images are resized to at most 256 × 256.</p></div><label class="upload-button" for="image-file">Choose an image</label><input id="image-file" class="visually-hidden" type="file" accept="image/*"></div>
-                  <div class="image-pipeline" aria-label="Original color, grayscale, and binary mask previews">
+                  <div id="image-pipeline" class="image-pipeline" data-steps="3" aria-label="Original color, grayscale, and binary mask previews">
                     <div class="image-frame"><span>1 · Original</span><canvas id="color-preview" aria-label="Original color image"></canvas></div>
                     <span class="pipeline-arrow" aria-hidden="true">→</span>
-                    <div class="image-frame"><span>2 · Grayscale</span><canvas id="image-preview" aria-label="Current grayscale image"></canvas></div>
-                    <span class="pipeline-arrow" aria-hidden="true">→</span>
-                    <div class="image-frame"><span>3 · Binary mask</span><canvas id="mask-preview" aria-label="Current binary mask"></canvas></div>
+                    <div class="image-frame"><span id="grayscale-stage-label">2 · Grayscale</span><canvas id="image-preview" aria-label="Current grayscale image"></canvas></div>
+                    <span id="mask-pipeline-arrow" class="pipeline-arrow" aria-hidden="true">→</span>
+                    <div id="mask-stage" class="image-frame"><span>3 · Binary mask</span><canvas id="mask-preview" aria-label="Current binary mask"></canvas></div>
                   </div>
                   <div class="segmentation-controls">
                     <label class="binary-toggle"><input id="binarize" type="checkbox" checked><span>Use binary mask</span></label>
@@ -356,7 +294,7 @@ export function mountApp(root: HTMLElement): () => void {
               <div><span>H₁ loops</span><strong id="metric-loops">—</strong></div>
               <div><span>Runtime</span><strong id="metric-runtime">—</strong></div>
             </div>
-            <figure class="diagram-card"><figcaption><span>Persistence diagram</span><span class="diagram-legend"><i class="h0"></i>H₀ <i class="h1"></i>H₁ <i class="h2"></i>H₂+</span></figcaption><canvas id="diagram" width="680" height="410" aria-label="Persistence diagram"></canvas></figure>
+            <figure class="diagram-card"><figcaption><span>Persistence diagram</span><span class="diagram-legend"><i class="h0"></i>H₀ <i class="h1"></i>H₁ <i class="h2"></i>H₂</span></figcaption><div id="diagram" role="img" aria-label="Interactive persistence diagram"></div></figure>
             <div class="interpretation"><strong>What this result says</strong><p id="result-description">Connected components, loops, and higher-dimensional features will appear here after computation.</p></div>
             <details class="raw-result"><summary>Inspect structured result</summary><button id="copy-result" class="secondary-action" type="button" disabled>Copy JSON</button><pre id="result-json">No result yet.</pre></details>
           </aside>
@@ -391,6 +329,7 @@ export function mountApp(root: HTMLElement): () => void {
   const pointPreview = element<HTMLDivElement>('#point-preview');
   const pointTools = element<HTMLDivElement>('#point-tools');
   const pointToolButtons = [...pointTools.querySelectorAll<HTMLButtonElement>('[data-point-tool]')];
+  const pointAxesButton = element<HTMLButtonElement>('#toggle-point-axes');
   const pointInteraction = element<HTMLDivElement>('#point-interaction');
   const pointMeta = element<HTMLElement>('#point-meta');
   const filtrationPlayer = element<HTMLDivElement>('#filtration-player');
@@ -406,11 +345,15 @@ export function mountApp(root: HTMLElement): () => void {
   const thresholdValue = element<HTMLOutputElement>('#threshold-value');
   const autoThreshold = element<HTMLButtonElement>('#auto-threshold');
   const foreground = element<HTMLSelectElement>('#foreground');
+  const imagePipeline = element<HTMLDivElement>('#image-pipeline');
+  const grayscaleStageLabel = element<HTMLElement>('#grayscale-stage-label');
+  const maskPipelineArrow = element<HTMLElement>('#mask-pipeline-arrow');
+  const maskStage = element<HTMLDivElement>('#mask-stage');
   const colorPreview = element<HTMLCanvasElement>('#color-preview');
   const imagePreview = element<HTMLCanvasElement>('#image-preview');
   const maskPreview = element<HTMLCanvasElement>('#mask-preview');
   const imageMeta = element<HTMLElement>('#image-meta');
-  const diagram = element<HTMLCanvasElement>('#diagram');
+  const diagram = element<HTMLElement>('#diagram');
   const resultJson = element<HTMLPreElement>('#result-json');
   const copyResult = element<HTMLButtonElement>('#copy-result');
   const resultDescriptionElement = element<HTMLParagraphElement>('#result-description');
@@ -433,6 +376,7 @@ export function mountApp(root: HTMLElement): () => void {
   let showFiltrationPlayhead = false;
   let filtrationFrame: number | null = null;
   let pointInteractionMode: 'move' | 'edit' = 'move';
+  let showPointAxes = false;
   const pointVisualization = mountPointCloudVisualization(pointPreview);
 
   const setMode = (mode: 'simplicial' | 'cubical') => {
@@ -444,7 +388,7 @@ export function mountApp(root: HTMLElement): () => void {
       filtrationRatio = 1;
       showFiltrationPlayhead = false;
       syncPointPreview();
-      drawDiagram(diagram, activeSimplicialResult.persistence.strongestPairs);
+      renderPersistenceDiagram(diagram, activeSimplicialResult.persistence.strongestPairs);
     }
   };
 
@@ -463,20 +407,40 @@ export function mountApp(root: HTMLElement): () => void {
     const dimension = currentPoints[0]?.length ?? 0;
     const visualization = activeSimplicialResult?.visualization;
     const currentT = currentFiltrationValue();
+    const selectedComplex = complexSelect.value as ComplexKind;
+    const previewParameters: ComplexParameters = {};
+    parameterFields.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-parameter]').forEach((control) => {
+      const value = Number(control.value);
+      if (Number.isFinite(value)) previewParameters[control.dataset.parameter as keyof ComplexParameters] = value;
+    });
+    const fitMaximum = pointCloudFitMaximumFiltration(
+      selectedComplex,
+      previewParameters,
+      visualization?.supported ? visualization.maxFiltration : null,
+    );
     const activeEdges = dimension === 2 && visualization?.supported
       ? visualization.edges.filter((edge) => edge.filtration <= currentT)
       : [];
-    const currentDiskRadius = dimension === 2 && showFiltrationPlayhead && activeSimplicialResult
-      ? coverDiskRadius(activeSimplicialResult.complex, currentT)
-      : null;
-    const finalDiskRadius = currentDiskRadius !== null && activeSimplicialResult
-      ? coverDiskRadius(activeSimplicialResult.complex, activeSimplicialResult.visualization.maxFiltration)
-      : null;
+    const { diskRadius: currentDiskRadius, fitDiskRadius: finalDiskRadius } = pointCloudFiltrationRadii(
+      dimension,
+      fitMaximum === null ? null : selectedComplex,
+      currentT,
+      fitMaximum ?? 0,
+      showFiltrationPlayhead && Boolean(visualization?.supported),
+    );
     pointVisualization.render(currentPoints, {
       edges: activeEdges,
       diskRadii: currentDiskRadius === null ? undefined : currentPoints.map(() => currentDiskRadius),
       fitDiskRadii: finalDiskRadius === null ? undefined : currentPoints.map(() => finalDiskRadius),
       interactionMode: pointInteractionMode,
+      showAxes: showPointAxes,
+      filtration3d: dimension === 3 && visualization?.supported && activeSimplicialResult ? {
+        complex: activeSimplicialResult.complex,
+        simplices: visualization.simplices,
+        maxSimplexDimension: activeSimplicialResult.input.parameters.maxSimplexDimension ?? 3,
+        value: currentT,
+        showCover: showFiltrationPlayhead,
+      } : undefined,
       onPointsChange: dimension === 2 ? (nextPoints) => {
         stopFiltrationAnimation();
         activeSimplicialResult = null;
@@ -496,12 +460,14 @@ export function mountApp(root: HTMLElement): () => void {
     pointPreview.setAttribute('aria-label', `Interactive point cloud with ${currentPoints.length} points in ${dimension} dimensions`);
     pointTools.hidden = dimension !== 2;
     pointToolButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.pointTool === pointInteractionMode)));
+    pointAxesButton.setAttribute('aria-pressed', String(showPointAxes));
+    pointAxesButton.setAttribute('aria-label', `${showPointAxes ? 'Hide' : 'Show'} axes and ticks`);
     pointInteraction.textContent = dimension === 3
       ? 'Drag to rotate · scroll to zoom'
       : pointInteractionMode === 'move'
         ? 'Drag a point to move it'
         : 'Select a point to enter x, y';
-    filtrationPlayer.hidden = dimension !== 2;
+    filtrationPlayer.hidden = false;
   };
 
   const syncImagePreview = (image: ScalarImage) => {
@@ -510,6 +476,13 @@ export function mountApp(root: HTMLElement): () => void {
       cachedSmoothedImage = gaussianBlurImage(image);
     }
     const smoothedImage = cachedSmoothedImage;
+    const pipelinePresentation = imagePipelinePresentation(binarize.checked);
+    imagePipeline.dataset.steps = pipelinePresentation.stepCount;
+    imagePipeline.setAttribute('aria-label', pipelinePresentation.ariaLabel);
+    grayscaleStageLabel.textContent = pipelinePresentation.grayscaleLabel;
+    maskPipelineArrow.dataset.disabled = String(pipelinePresentation.maskDisabled);
+    maskStage.dataset.disabled = String(pipelinePresentation.maskDisabled);
+    maskStage.setAttribute('aria-disabled', String(pipelinePresentation.maskDisabled));
     const resolvedThreshold = automaticThreshold ? otsuThreshold(smoothedImage.values) : Number(threshold.value);
     threshold.value = String(resolvedThreshold);
     thresholdValue.value = binarize.checked
@@ -525,9 +498,7 @@ export function mountApp(root: HTMLElement): () => void {
       getWorkspaceState().currentImage === image ? getWorkspaceState().currentImageRgba ?? undefined : undefined,
     );
     drawImage(imagePreview, image);
-    const preview = binarize.checked
-      ? closeBinaryImage(binarizeImage(smoothedImage, resolvedThreshold, foreground.value as ForegroundPolarity).image)
-      : image;
+    const preview = closeBinaryImage(binarizeImage(smoothedImage, resolvedThreshold, foreground.value as ForegroundPolarity).image);
     drawImage(maskPreview, preview);
   };
 
@@ -578,17 +549,14 @@ export function mountApp(root: HTMLElement): () => void {
   };
 
   const readParameters = (points: number[][]): ComplexParameters => {
-    const parameters: Record<string, number | 'pca'> = {
+    const parameters: Record<string, number> = {
       maxSimplexDimension: defaultMaximumSimplexDimension(points),
     };
     parameterFields.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-parameter]').forEach((control) => {
       const key = control.dataset.parameter!;
-      if (key === 'axesMode' && control.value === 'pca') parameters[key] = 'pca';
-      else {
-        const value = Number(control.value);
-        if (!Number.isFinite(value)) throw new Error(`${key} must be a number.`);
-        parameters[key] = value;
-      }
+      const value = Number(control.value);
+      if (!Number.isFinite(value)) throw new Error(`${key} must be a number.`);
+      parameters[key] = value;
     });
     return parameters as ComplexParameters;
   };
@@ -606,10 +574,10 @@ export function mountApp(root: HTMLElement): () => void {
       ? 'Pause filtration'
       : filtrationRatio >= 1 ? 'Replay filtration' : 'Play filtration';
     syncPointPreview();
-    drawDiagram(
+    renderPersistenceDiagram(
       diagram,
       activeSimplicialResult.persistence.strongestPairs,
-      withPlayhead ? { playhead: t, axisMaximum: activeSimplicialResult.visualization.maxFiltration } : undefined,
+      { playhead: withPlayhead ? t : undefined },
     );
   };
 
@@ -635,7 +603,7 @@ export function mountApp(root: HTMLElement): () => void {
       resultDescriptionElement.textContent = 'Connected components, loops, and higher-dimensional features will appear here after computation.';
       resultJson.textContent = '';
       copyResult.disabled = true;
-      drawDiagram(diagram, []);
+      renderPersistenceDiagram(diagram, []);
       return;
     }
     metricFeatures.textContent = metricValue(result.persistence.pairCount);
@@ -661,16 +629,14 @@ export function mountApp(root: HTMLElement): () => void {
         : result.visualization.reason ?? 'Unavailable';
       toggleFiltration.textContent = 'Replay filtration';
       syncPointPreview();
-      drawDiagram(
+      renderPersistenceDiagram(
         diagram,
         result.persistence.strongestPairs,
-        showFiltrationPlayhead
-          ? { playhead: currentFiltrationValue(), axisMaximum: result.visualization.maxFiltration }
-          : undefined,
+        { playhead: showFiltrationPlayhead ? currentFiltrationValue() : undefined },
       );
     } else {
       resetFiltration();
-      drawDiagram(diagram, result.persistence.strongestPairs);
+      renderPersistenceDiagram(diagram, result.persistence.strongestPairs);
     }
   };
 
@@ -681,6 +647,11 @@ export function mountApp(root: HTMLElement): () => void {
     syncPointPreview();
   }));
 
+  pointAxesButton.addEventListener('click', () => {
+    showPointAxes = !showPointAxes;
+    syncPointPreview();
+  });
+
   pointSampleSelect.addEventListener('change', () => {
     if (pointSampleSelect.value !== 'custom') {
       resetFiltration('Point cloud changed. Compute persistence to build its filtration.');
@@ -690,17 +661,11 @@ export function mountApp(root: HTMLElement): () => void {
 
   complexSelect.addEventListener('change', () => {
     resetFiltration('Complex changed. Compute persistence to build its filtration.');
-    const kind = complexSelect.value as ComplexKind;
-    const dimension = currentPoints[0]?.length;
-    if (kind === 'k-fold-cover' && dimension !== 3) {
-      pointSampleSelect.value = 'sphere';
-      setPoints(pointSample('sphere'));
-    } else if (kind === 'wing' && dimension !== 2) {
-      pointSampleSelect.value = 'circle';
-      setPoints(pointSample('circle'));
-    }
-    renderParameters(kind);
+    renderParameters(complexSelect.value as ComplexKind);
+    syncPointPreview();
   });
+
+  parameterFields.addEventListener('input', syncPointPreview);
 
   pointsInput.addEventListener('input', () => {
     try {
@@ -844,12 +809,10 @@ export function mountApp(root: HTMLElement): () => void {
         imageSelect.value = cubical.source === 'sample' ? cubical.sample ?? 'donut' : cubical.source === 'values' ? 'custom' : imageSelect.value;
       }
     }
-    webMcpStatus.textContent = state.webMcpStatus === 'unsupported'
-      ? 'browser unavailable'
-      : state.webMcpStatus === 'registering' ? 'checking' : state.webMcpStatus;
+    webMcpStatus.textContent = webMcpStatusLabel(state.webMcpStatus);
     webMcpStatus.dataset.status = state.webMcpStatus;
-    webMcpStatus.parentElement!.title = state.webMcpStatus === 'unsupported'
-      ? 'This browser does not expose the experimental WebMCP API. The human workbench still works normally.'
+    webMcpStatus.title = state.webMcpStatus === 'unsupported'
+      ? 'This browser does not support WebMCP, so agent tools cannot connect. The interactive workbench still works normally.'
       : 'WebMCP registration status';
     computeStatus.textContent = state.status === 'computing' ? 'Computing…' : state.status[0]!.toUpperCase() + state.status.slice(1);
     computeStatus.dataset.status = state.status;
@@ -864,14 +827,15 @@ export function mountApp(root: HTMLElement): () => void {
     updateResult(state.latestResult);
   });
 
-  setPoints(currentPoints);
   renderParameters('rips');
+  setPoints(currentPoints);
   syncImagePreview(getWorkspaceState().currentImage);
   void loadSelectedImageSample('donut').catch((error: unknown) => updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) }));
 
   return () => {
     stopFiltrationAnimation();
     unsubscribe();
+    unmountPersistenceDiagram(diagram);
     pointVisualization.unmount();
   };
 }

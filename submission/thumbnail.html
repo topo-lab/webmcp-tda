@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>WebMCP TDA</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 1800px; height: 1200px; margin: 0; overflow: hidden; }
+    body { color: #eefaff; background: #0b2531; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .frame { width: 100%; height: 100%; padding: 80px 88px 72px; display: grid; grid-template-columns: 1.05fr .95fr; grid-template-rows: auto 1fr auto; gap: 48px 74px; background-image: linear-gradient(rgba(157,182,189,.08) 1px, transparent 1px), linear-gradient(90deg, rgba(157,182,189,.08) 1px, transparent 1px); background-size: 56px 56px; }
+    header { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; padding-bottom: 28px; border-bottom: 1px solid rgba(157,182,189,.28); }
+    .brand { font-size: 27px; font-weight: 760; letter-spacing: -.04em; }
+    .status { color: #b8d0d5; font: 600 17px/1.2 ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase; }
+    main { align-self: center; }
+    .eyebrow { margin: 0 0 24px; color: #78d4ea; font: 650 17px/1.3 ui-monospace, monospace; letter-spacing: .15em; text-transform: uppercase; }
+    h1 { max-width: 850px; margin: 0; font-size: 108px; line-height: .92; letter-spacing: -.065em; font-weight: 720; }
+    h1 span { display: block; color: #9db6bd; font-weight: 360; }
+    .lede { max-width: 700px; margin: 38px 0 0; color: #c8dadd; font-size: 27px; line-height: 1.48; }
+    .visual { align-self: center; position: relative; min-height: 720px; }
+    .instrument { position: absolute; inset: 0; border: 1px solid rgba(157,182,189,.35); border-radius: 20px; background: rgba(5,24,32,.74); box-shadow: 0 30px 80px rgba(0,0,0,.22); }
+    .instrument-label { position: absolute; left: 32px; top: 29px; color: #9db6bd; font: 650 15px/1 ui-monospace, monospace; letter-spacing: .13em; text-transform: uppercase; }
+    svg { position: absolute; inset: 70px 24px 28px; width: calc(100% - 48px); height: calc(100% - 98px); }
+    footer { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: end; padding-top: 28px; border-top: 1px solid rgba(157,182,189,.28); color: #b8d0d5; }
+    .tools { display: flex; gap: 24px; font: 650 16px/1.2 ui-monospace, monospace; }
+    .tools span { padding: 11px 14px; border: 1px solid rgba(120,212,234,.36); border-radius: 999px; }
+    .webmcp { color: #f0d99f; font: 700 19px/1.2 ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <header><div class="brand">WebMCP TDA</div><div class="status">Local WASM · Shared workspace</div></header>
+    <main>
+      <p class="eyebrow">Persistent homology in the browser</p>
+      <h1>Find the shape<span>that survives.</span></h1>
+      <p class="lede">People edit point clouds and images. Agents call the same topology tools and return results to the same visible workbench.</p>
+    </main>
+    <section class="visual" aria-label="Point cloud and persistence diagram illustration">
+      <div class="instrument"></div>
+      <div class="instrument-label">Point cloud · filtration t = 0.62</div>
+      <svg viewBox="0 0 720 620" role="img">
+        <g stroke="#9db6bd" stroke-opacity=".15" stroke-width="1">
+          <path d="M0 100H720M0 200H720M0 300H720M0 400H720M0 500H720"/>
+          <path d="M100 0V620M200 0V620M300 0V620M400 0V620M500 0V620M600 0V620"/>
+        </g>
+        <g fill="#5ac8e8" fill-opacity=".09" stroke="#78d4ea" stroke-opacity=".42" stroke-width="1.5">
+          <circle cx="360" cy="80" r="56"/><circle cx="470" cy="112" r="56"/><circle cx="550" cy="198" r="56"/><circle cx="575" cy="310" r="56"/><circle cx="530" cy="420" r="56"/><circle cx="438" cy="495" r="56"/><circle cx="325" cy="510" r="56"/><circle cx="220" cy="462" r="56"/><circle cx="152" cy="370" r="56"/><circle cx="148" cy="255" r="56"/><circle cx="205" cy="155" r="56"/><circle cx="300" cy="95" r="56"/>
+        </g>
+        <g stroke="#d6ad5c" stroke-opacity=".68" stroke-width="3" fill="#d6ad5c" fill-opacity=".12">
+          <path d="M360 80L470 112L550 198L575 310L530 420L438 495L325 510L220 462L152 370L148 255L205 155L300 95Z" fill="none"/>
+          <path d="M205 155L360 80L470 112L550 198M152 370L220 462L325 510L438 495"/>
+          <path d="M300 95L205 155L148 255M575 310L530 420L438 495"/>
+          <path d="M360 80L205 155L300 95Z"/><path d="M438 495L530 420L575 310Z"/>
+        </g>
+        <g fill="#f0d99f" stroke="#0b2531" stroke-width="4">
+          <circle cx="360" cy="80" r="9"/><circle cx="470" cy="112" r="9"/><circle cx="550" cy="198" r="9"/><circle cx="575" cy="310" r="9"/><circle cx="530" cy="420" r="9"/><circle cx="438" cy="495" r="9"/><circle cx="325" cy="510" r="9"/><circle cx="220" cy="462" r="9"/><circle cx="152" cy="370" r="9"/><circle cx="148" cy="255" r="9"/><circle cx="205" cy="155" r="9"/><circle cx="300" cy="95" r="9"/>
+        </g>
+        <g transform="translate(410 360)">
+          <rect width="265" height="205" rx="10" fill="#f7fbfb" stroke="#9db6bd" stroke-opacity=".6"/>
+          <path d="M38 165L225 28" stroke="#9fb2b6" stroke-width="2"/>
+          <path d="M38 22V165H235" fill="none" stroke="#526971" stroke-width="2"/>
+          <circle cx="75" cy="130" r="7" fill="#137963"/><circle cx="132" cy="92" r="7" fill="#e85f3f"/><path d="M198 47l9 9-9 9-9-9z" fill="#7657d6"/>
+          <text x="186" y="190" fill="#526971" font-family="ui-monospace, monospace" font-size="13">birth</text>
+          <text x="17" y="85" fill="#526971" font-family="ui-monospace, monospace" font-size="13" transform="rotate(-90 17 85)">death</text>
+        </g>
+      </svg>
+    </section>
+    <footer><div class="tools"><span>Point clouds</span><span>Images</span><span>Persistence diagrams</span></div><div class="webmcp">4 WebMCP tools</div></footer>
+  </div>
+</body>
+</html>
