@@ -53,6 +53,8 @@ WebMCP needs tests at three layers because browser discovery alone does not prov
 2. **Tool contract:** compile every `inputSchema`, check names, descriptions, closed objects, and safety annotations, then call every `execute` handler with valid and invalid inputs. The page validates its own inputs because clients may not enforce every JSON Schema keyword.
 3. **Agent smoke test:** open the top-level page in a WebMCP-capable browser, inspect the discovered tools, invoke all four through the browser's WebMCP channel, and verify computation results appear in the shared visible workbench. Also verify a malformed call returns a useful error.
 
+Use the [live agent acceptance checklist](docs/AGENT_ACCEPTANCE.md) for reproducible closed-form computations, shared-state invalidation, malformed-input rejection, and recovery through a real browser tool channel.
+
 `npm run test:coverage` enforces 100% statements, branches, functions, and lines for the runtime WebMCP boundary in `src/webmcp/register.ts` and `src/webmcp/tools.ts`. The wider application keeps its normal full-suite reporting separate, so generated code, visualization code, and Worker code are not mislabeled as covered by these contract tests.
 
 For local Chrome testing, enable `chrome://flags/#enable-webmcp-testing` and relaunch Chrome. Codex and ChatGPT Work can discover imperative tools registered by the top-level page in the ChatGPT desktop app's built-in browser. Current built-in-browser support does not include declarative tools or tools registered inside iframes.
