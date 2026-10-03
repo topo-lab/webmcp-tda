@@ -14,7 +14,7 @@ export default defineConfig({
       reporter: ['text', 'json', 'json-summary', 'html'],
       reportsDirectory: 'coverage/all',
       thresholds: {
-        'src/webmcp/{register,tools}.ts': {
+        'src/webmcp/{register,tools,agentView}.ts': {
           branches: 100,
           functions: 100,
           lines: 100,

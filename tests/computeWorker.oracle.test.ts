@@ -124,17 +124,65 @@ describe('worker simplicial geometry and persistence', () => {
     ];
     for (const points of clouds) for (const maxSimplexDimension of [1, 2, 3]) for (const cutoff of [0.999, 1, 1.5, 4]) {
       const result = await compute({ kind: 'simplicial', complex: 'rips', points, resultLimit: 200, parameters: { maxEdgeLength: cutoff, maxSimplexDimension } });
-      expectPairs(intervals(result), ripsOracle(points, cutoff, maxSimplexDimension));
+      if (result.kind !== 'simplicial') throw new Error('wrong result kind');
+      const reliable = maxSimplexDimension - 1;
+      const capped = ripsOracle(points, cutoff, maxSimplexDimension);
+      // Capping at dimension d makes H_d an artifact: the result reports H_0..H_(d-1) and counts the rest as excluded.
+      expect(result.interpretation.reliableThroughDimension).toBe(reliable);
+      expectPairs(intervals(result), capped.filter((p) => p[0] <= reliable));
+      const artifacts = capped.filter((p) => p[0] > reliable).length;
+      expect(Object.values(result.persistence.excludedPairs).reduce((sum, count) => sum + count, 0)).toBe(artifacts);
+      // The (i+1)-skeleton determines H_i, so the reported dimensions must equal those of a larger cap.
+      expectPairs(intervals(result), ripsOracle(points, cutoff, Math.max(maxSimplexDimension, 3)).filter((p) => p[0] <= reliable));
     }
   });
 
-  it('retains a capped alpha cycle as essential and explicitly warns about truncation', async () => {
+  it('leaves out the cycle of a capped alpha complex instead of reporting an artifact as a feature', async () => {
     const result = await compute({ kind: 'simplicial', complex: 'alpha', points: [[0, 0], [1, 0], [1, 1], [0, 1]], parameters: { maxSimplexDimension: 1 } });
     if (result.kind !== 'simplicial') throw new Error('wrong result kind');
     expect(result.complexSummary.maxDimension).toBe(1);
     expect(result.visualization.simplices.every((s) => s.vertices.length <= 2)).toBe(true);
-    expect(result.interpretation.warning).toMatch(/H1 classes can be truncation artifacts/);
-    expect(intervals(result).some((p) => p[0] === 1 && p[2] === Infinity)).toBe(true);
+    expect(result.interpretation.reliableThroughDimension).toBe(0);
+    // Four sides and one diagonal: two independent cycles, both essential without triangles.
+    expect(result.persistence.excludedPairs).toEqual({ 1: 2 });
+    expect(result.interpretation.warnings.join(' ')).toMatch(/2 H1 classes are not reported: the complex is capped at simplex dimension 1/);
+    expect(intervals(result).every((p) => p[0] === 0)).toBe(true);
+  });
+
+  it('does not truncate a complete alpha complex, so its top-dimension classes are real', async () => {
+    const points = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 1], [-1, 0.2, 0.1]];
+    const result = await compute({ kind: 'simplicial', complex: 'alpha', points });
+    if (result.kind !== 'simplicial') throw new Error('wrong result kind');
+    expect(result.interpretation).toEqual({ reliableThroughDimension: 3, warnings: [] });
+    expect(result.persistence.excludedPairs).toEqual({});
+  });
+
+  it('defaults the Rips and Čech limits to the cloud diameter, so a cloud at any scale connects', async () => {
+    const unit = [[1, 0], [0.5, 0.866], [-0.5, 0.866], [-1, 0], [-0.5, -0.866], [0.5, -0.866]];
+    for (const scale of [1, 100, 0.01]) {
+      const points = unit.map(([x, y]) => [x! * scale, y! * scale]);
+      for (const complex of ['rips', 'cech'] as const) {
+        const result = await compute({ kind: 'simplicial', complex, points });
+        if (result.kind !== 'simplicial') throw new Error('wrong result kind');
+        expect(result.input.defaulted).toEqual([complex === 'rips' ? 'maxEdgeLength' : 'maxRadius']);
+        expect(result.input.scale.diameter).toBeCloseTo(2 * scale, 6);
+        expect(result.persistence.essentialByDimension[0]).toBe(1);
+        expect(result.persistence.persistentByDimension[1]).toBe(1);
+        // A full-range complex always has top-dimension artifacts; they are left out, and that is only news when the caller capped the depth.
+        expect(Object.keys(result.persistence.excludedPairs)).toEqual(['2']);
+        expect(result.interpretation.warnings).toEqual([]);
+      }
+    }
+  });
+
+  it('warns when a chosen limit stops the filtration before the points connect', async () => {
+    const points = [[0, 0], [1, 0], [10, 0], [11, 0]];
+    const rips = await compute({ kind: 'simplicial', complex: 'rips', points, parameters: { maxEdgeLength: 2 } });
+    const cech = await compute({ kind: 'simplicial', complex: 'cech', points, parameters: { maxRadius: 1 } });
+    if (rips.kind !== 'simplicial' || cech.kind !== 'simplicial') throw new Error('wrong result kind');
+    expect(rips.input.defaulted).toEqual([]);
+    expect(rips.interpretation.warnings.join(' ')).toMatch(/At maxEdgeLength 2 the complex still has 2 connected components; the points connect at 9\./);
+    expect(cech.interpretation.warnings.join(' ')).toMatch(/At maxRadius 1 the complex still has 2 connected components; the points connect at 4\.5\./);
   });
 
   it('returns structured worker errors without losing the next valid computation', async () => {

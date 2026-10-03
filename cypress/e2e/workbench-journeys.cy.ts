@@ -27,7 +27,7 @@ describe('Workbench input and recovery journeys', () => {
     ready();
     cy.get('#coefficient-field').select('3');
     cy.get('#compute-status').should('have.attr', 'data-status', 'idle');
-    cy.get('#metric-features').should('have.text', '—');
+    cy.get('#metric-components').should('have.text', '—');
     cy.get('#toggle-filtration').should('be.disabled');
     cy.get('#run-simplicial').click();
     ready();
@@ -40,19 +40,25 @@ describe('Workbench input and recovery journeys', () => {
     cy.get('#result-json').invoke('text').then((text) => expect(JSON.parse(text).input.parameters.maxEdgeLength).to.equal(1));
   });
 
-  it('does not restore a superseded result after an input edit during computation', () => {
+  it('stops a superseded computation and never shows its result after an input edit', () => {
+    let terminatedWorkers = 0;
     let completedWorkerMessages = 0;
     // A warm browser cache bypasses cy.intercept; this case needs a real delayed load.
     cy.then(() => Cypress.automation('remote:debugger:protocol', { command: 'Network.clearBrowserCache' }));
-    cy.intercept('**/*.wasm*', (request) => request.on('response', (response) => response.setDelay(1000))).as('wasm');
+    cy.intercept('**/*.wasm*', (request) => request.on('response', (response) => response.setDelay(1000)));
     cy.visit('/', {
       onBeforeLoad(win) {
         const NativeWorker = win.Worker;
-        // Observe the real worker's completion; do not substitute its computation.
+        // Observe the real worker; do not substitute its computation.
         win.Worker = class extends NativeWorker {
           constructor(url: string | URL, options?: WorkerOptions) {
             super(url, options);
             this.addEventListener('message', () => { completedWorkerMessages += 1; });
+          }
+
+          terminate() {
+            terminatedWorkers += 1;
+            super.terminate();
           }
         };
       },
@@ -60,14 +66,15 @@ describe('Workbench input and recovery journeys', () => {
     cy.get('#run-simplicial').click();
     cy.get('#compute-status').should('have.attr', 'data-status', 'computing');
     cy.get('#coefficient-field').select('3');
-    cy.wait('@wasm');
-    cy.wrap(null).should(() => expect(completedWorkerMessages, 'the original worker actually finished').to.be.greaterThan(0));
+    // The person's own run can no longer be shown, so its worker is terminated instead of finishing in the background.
+    cy.wrap(null).should(() => expect(terminatedWorkers, 'the superseded worker was terminated').to.be.greaterThan(0));
     cy.get('#compute-status').should('have.attr', 'data-status', 'idle');
-    cy.get('#metric-features').should('have.text', '—');
+    cy.get('#metric-components').should('have.text', '—');
     cy.get('#toggle-filtration').should('be.disabled');
     cy.get('#run-simplicial').click();
     ready();
     cy.get('#result-json').invoke('text').then((text) => expect(JSON.parse(text).input.coefficientField).to.equal(3));
+    cy.then(() => expect(completedWorkerMessages, 'only the new run completed').to.be.greaterThan(0));
   });
 
   it('recovers from invalid point JSON through a bundled dataset', () => {
@@ -77,7 +84,7 @@ describe('Workbench input and recovery journeys', () => {
     cy.get('.advanced-input summary').click();
     cy.get('#points-input').clear().type('invalid JSON');
     cy.get('#toggle-filtration').should('be.disabled');
-    cy.get('#metric-features').should('have.text', '—');
+    cy.get('#metric-components').should('have.text', '—');
     cy.get('#points-input').should('have.attr', 'aria-invalid', 'true');
     cy.get('#run-simplicial').click();
     cy.get('#compute-status').should('have.attr', 'data-status', 'error');

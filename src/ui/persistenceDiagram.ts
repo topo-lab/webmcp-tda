@@ -132,7 +132,8 @@ export function buildPersistenceDiagram(
   const axisStyle = {
     range: [minimum, axisMaximum] as [number, number],
     fixedrange: false,
-    automargin: true,
+    // Fixed margins: with automargin the left margin grows after the first draw, which re-derives the equal-scale ranges once.
+    automargin: false,
     showgrid: true,
     gridcolor: '#e1e9e9',
     gridwidth: 1,
@@ -152,7 +153,7 @@ export function buildPersistenceDiagram(
     layout: {
       autosize: true,
       height: 410,
-      margin: { l: 62, r: 30, t: 48, b: 58 },
+      margin: { l: 76, r: 30, t: 48, b: 58 },
       paper_bgcolor: '#ffffff',
       plot_bgcolor: '#ffffff',
       hovermode: 'closest',
@@ -182,6 +183,8 @@ export function buildPersistenceDiagram(
           : [...numericTicks.map(formatTick), '∞'],
         scaleanchor: 'x',
         scaleratio: 1,
+        // Keep equal scales by shrinking the plot area, never by stretching a range: the ranges stay exactly as declared.
+        constrain: 'domain',
       },
       shapes: diagramShapes(minimum, numericMaximum, axisMaximum, infinityLevel, options.playhead),
       annotations: visiblePairs.length === 0 ? [{
@@ -198,7 +201,10 @@ export function buildPersistenceDiagram(
       responsive: true,
       displaylogo: false,
       displayModeBar: true,
+      // Plotly 4 adds a "Share chart..." button that uploads the chart to Plotly Cloud; this page never uploads.
+      showSendToCloud: false,
       modeBarButtonsToRemove: [
+        'sendChartToCloud',
         'zoom2d',
         'pan2d',
         'select2d',

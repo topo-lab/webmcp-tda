@@ -1,5 +1,8 @@
 import type { ComputeResult, ScalarImage } from './tda/types';
 
+/** The 2×2 stand-in image shown until the default image has loaded. */
+export const PLACEHOLDER_IMAGE_NAME = 'loading-example';
+
 export type ServiceStatus = 'idle' | 'computing' | 'ready' | 'error';
 export type WebMcpStatus = 'registering' | 'ready' | 'unsupported' | 'error';
 
@@ -19,7 +22,7 @@ const state: WorkspaceState = {
   webMcpStatus: 'registering',
   activity: 'Ready for a human or agent request.',
   error: null,
-  currentImage: { name: 'loading-example', width: 2, height: 2, values: [255, 255, 255, 255] },
+  currentImage: { name: PLACEHOLDER_IMAGE_NAME, width: 2, height: 2, values: [255, 255, 255, 255] },
   currentImageRgba: null,
   latestResult: null,
   latestRequest: null,

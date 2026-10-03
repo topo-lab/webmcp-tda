@@ -2,8 +2,11 @@
 
 import { GudhiPersistentCohomology, type AlphaComplexResult } from 'tda-wasm';
 import { binarizeImage, closeBinaryImage, gaussianBlurImage } from './imageProcessing';
+import { interpretationWarnings, reliableThroughDimension, type ResolvedParameters } from './interpretation';
+import { pointCloudScale, type PointCloudScale } from './scale';
 import { summarizeComplex, summarizePersistence } from './summary';
 import type {
+  ComplexKind,
   ComplexParameters,
   ComputeRequest,
   CubicalRequest,
@@ -15,6 +18,7 @@ import type {
 } from './types';
 import {
   defaultMaximumSimplexDimension,
+  MAX_RESULT_LIMIT,
   validateCubicalRequest,
   validateSimplicialRequest,
 } from './validation';
@@ -41,16 +45,23 @@ function flat(points: number[][]): number[] {
   return points.flatMap((point) => point);
 }
 
-function defaults(request: SimplicialRequest): Required<Pick<ComplexParameters, 'maxSimplexDimension'>> & ComplexParameters {
+/** Limits the caller leaves out default to the diameter of the cloud, so no scale cuts the filtration off. */
+function resolveParameters(request: SimplicialRequest, scale: PointCloudScale): ResolvedParameters {
+  const given = request.parameters ?? {};
+  const fallback = scale.diameter > 0 ? scale.diameter : 1;
+  const defaulted: ResolvedParameters['defaulted'] = [];
+  if (request.complex === 'rips' && given.maxEdgeLength === undefined) defaulted.push('maxEdgeLength');
+  if (request.complex === 'cech' && given.maxRadius === undefined) defaulted.push('maxRadius');
   return {
-    maxSimplexDimension: request.parameters?.maxSimplexDimension ?? defaultMaximumSimplexDimension(request.points),
-    maxEdgeLength: request.parameters?.maxEdgeLength ?? 1.5,
-    maxRadius: request.parameters?.maxRadius ?? 1,
+    maxSimplexDimension: given.maxSimplexDimension ?? defaultMaximumSimplexDimension(request.points),
+    maxEdgeLength: given.maxEdgeLength ?? fallback,
+    maxRadius: given.maxRadius ?? fallback,
+    defaulted,
   };
 }
 
-function reportedParameters(kind: SimplicialRequest['complex'], parameters: ComplexParameters): ComplexParameters {
-  const maxSimplexDimension = parameters.maxSimplexDimension;
+function reportedParameters(kind: ComplexKind, parameters: ResolvedParameters): ComplexParameters {
+  const { maxSimplexDimension } = parameters;
   switch (kind) {
     case 'rips': return { maxEdgeLength: parameters.maxEdgeLength, maxSimplexDimension };
     case 'alpha': return { maxSimplexDimension };
@@ -74,13 +85,14 @@ async function computeSimplicial(request: SimplicialRequest): Promise<Simplicial
   const engine = await getEngine();
   const points = flat(request.points);
   const dimension = request.points[0]!.length;
-  const parameters = defaults(request);
+  const scale = pointCloudScale(request.points);
+  const parameters = resolveParameters(request, scale);
   const maxDimension = parameters.maxSimplexDimension;
   let complex: AlphaComplexResult;
 
   switch (request.complex) {
     case 'rips':
-      complex = engine.computeRipsComplex(points, dimension, parameters.maxEdgeLength!, maxDimension);
+      complex = engine.computeRipsComplex(points, dimension, parameters.maxEdgeLength, maxDimension);
       break;
     case 'alpha': {
       const weightedPoints = request.points.map((point) => ({
@@ -93,7 +105,7 @@ async function computeSimplicial(request: SimplicialRequest): Promise<Simplicial
       break;
     }
     case 'cech':
-      complex = engine.computeCechComplex(points, dimension, parameters.maxRadius!, maxDimension);
+      complex = engine.computeCechComplex(points, dimension, parameters.maxRadius, maxDimension);
       break;
   }
 
@@ -118,6 +130,12 @@ async function computeSimplicial(request: SimplicialRequest): Promise<Simplicial
     minFiltration = Math.min(minFiltration, simplex.filtration);
     maxFiltration = Math.max(maxFiltration, simplex.filtration);
   });
+
+  const reliable = reliableThroughDimension(request.complex, maxDimension, dimension);
+  const summary = summarizePersistence(persistence, MAX_RESULT_LIMIT, {
+    reliableThroughDimension: reliable,
+    filtrationRange: maxFiltration - minFiltration,
+  });
   return {
     kind: 'simplicial',
     complex: request.complex,
@@ -126,6 +144,8 @@ async function computeSimplicial(request: SimplicialRequest): Promise<Simplicial
       dimension,
       coefficientField,
       parameters: reportedParameters(request.complex, parameters),
+      defaulted: parameters.defaulted,
+      scale: { diameter: scale.diameter, connectingDistance: scale.connectingDistance },
     },
     complexSummary: summarizeComplex(complex.simplices),
     visualization: {
@@ -141,12 +161,17 @@ async function computeSimplicial(request: SimplicialRequest): Promise<Simplicial
       minFiltration,
       maxFiltration,
     },
-    persistence: summarizePersistence(persistence, request.resultLimit ?? 50),
+    persistence: summary,
     interpretation: {
-      reliableThroughDimension: Math.max(0, maxDimension - 1),
-      warning: maxDimension < 3
-        ? `The complex was capped at simplex dimension ${maxDimension}. H${maxDimension} classes can be truncation artifacts; interpret only H0 through H${Math.max(0, maxDimension - 1)}.`
-        : null,
+      reliableThroughDimension: reliable,
+      warnings: interpretationWarnings({
+        kind: request.complex,
+        persistence: summary,
+        maxSimplexDimension: maxDimension,
+        defaultSimplexDimension: defaultMaximumSimplexDimension(request.points),
+        parameters,
+        scale,
+      }),
     },
     elapsedMs: performance.now() - startedAt,
   };
@@ -174,6 +199,16 @@ function downsampleImage(image: ScalarImage, factor: 1 | 2 | 4): ScalarImage {
   return { ...image, width, height, values };
 }
 
+function valueRange(values: readonly number[]): { minimum: number; maximum: number } {
+  let minimum = Number.POSITIVE_INFINITY;
+  let maximum = Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    if (value < minimum) minimum = value;
+    if (value > maximum) maximum = value;
+  }
+  return { minimum, maximum };
+}
+
 async function computeCubical(request: CubicalRequest, currentImage?: ScalarImage) {
   validateCubicalRequest(request);
   const startedAt = performance.now();
@@ -189,9 +224,8 @@ async function computeCubical(request: CubicalRequest, currentImage?: ScalarImag
   const image = downsampleImage(processed.image, downsample);
   const filtration = request.filtration ?? 'sublevel';
   let values = image.values;
+  const { minimum, maximum } = valueRange(values);
   if (filtration === 'superlevel') {
-    const minimum = Math.min(...values);
-    const maximum = Math.max(...values);
     values = values.map((value) => minimum + maximum - value);
   }
   const persistence = engine.computeCubicalPersistenceFromVertices2D(values, image.width, image.height);
@@ -207,7 +241,7 @@ async function computeCubical(request: CubicalRequest, currentImage?: ScalarImag
       filtration,
       downsample,
     },
-    persistence: summarizePersistence(persistence, request.resultLimit ?? 50),
+    persistence: summarizePersistence(persistence, MAX_RESULT_LIMIT, { filtrationRange: maximum - minimum }),
     elapsedMs: performance.now() - startedAt,
   };
 }

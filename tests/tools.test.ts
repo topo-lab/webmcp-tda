@@ -1,97 +1,96 @@
-import { describe, expect, it, vi } from 'vitest';
-import { CAPABILITIES } from '../src/tda/capabilities';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { updateWorkspace } from '../src/state';
 import { TdaRuntime, type ComputeBackend } from '../src/tda/runtime';
 import type { ComputeResult } from '../src/tda/types';
 import { createWebMcpTools } from '../src/webmcp/tools';
+import { simplicialResult } from './helpers/fixtures';
 
-const fakeResult: ComputeResult = {
-  kind: 'simplicial',
-  complex: 'rips',
-  input: {
-    pointCount: 3,
-    dimension: 2,
-    coefficientField: 2,
-    parameters: { maxEdgeLength: 1.5, maxSimplexDimension: 2 },
-  },
-  complexSummary: {
-    simplexCount: 7,
-    simplexCountsByDimension: { 0: 3, 1: 3, 2: 1 },
-    maxDimension: 2,
-  },
-  visualization: {
-    supported: true,
-    reason: null,
-    simplices: [
-      { vertices: [0], filtration: 0 },
-      { vertices: [1], filtration: 0 },
-      { vertices: [2], filtration: 0 },
-      { vertices: [0, 1], filtration: 1 },
-    ],
-    simplexCount: 4,
-    edges: [{ vertices: [0, 1], filtration: 1 }],
-    edgeCount: 1,
-    truncated: false,
-    minFiltration: 0,
-    maxFiltration: 1,
-  },
-  persistence: {
-    pairCount: 1,
-    pairsByDimension: { 0: 1 },
-    essentialCount: 1,
-    returnedPairCount: 1,
-    strongestPairs: [{ id: 'H0:0:inf', dimension: 0, birth: 0, death: 'infinity', lifetime: 'infinity' }],
-  },
-  interpretation: { reliableThroughDimension: 1, warning: null },
-  elapsedMs: 2,
-};
+beforeEach(() => {
+  updateWorkspace({
+    status: 'idle',
+    activity: 'Ready.',
+    error: null,
+    latestRequest: null,
+    latestResult: null,
+    currentImage: { name: 'test-image', width: 2, height: 2, values: [0, 255, 255, 0] },
+    currentImageRgba: null,
+  });
+});
 
-describe('WebMCP tool contract', () => {
+function tool(tools: ReturnType<typeof createWebMcpTools>, name: string) {
+  return tools.find((candidate) => candidate.name === name)!;
+}
+
+describe('WebMCP tool set', () => {
   it('exposes four tools that complement the human workbench', () => {
-    const backend: ComputeBackend = { run: vi.fn().mockResolvedValue(fakeResult) };
-    const tools = createWebMcpTools(new TdaRuntime(backend));
-    expect(tools.map((tool) => tool.name)).toEqual([
+    const tools = createWebMcpTools(new TdaRuntime({ run: vi.fn().mockResolvedValue(simplicialResult()) }));
+    expect(tools.map((candidate) => candidate.name)).toEqual([
       'tda_get_capabilities',
       'tda_compute_simplicial_persistence',
       'tda_compute_cubical_persistence',
       'tda_get_latest_result',
     ]);
-    expect(tools.filter((tool) => tool.annotations?.readOnlyHint).map((tool) => tool.name)).toEqual([
+    expect(tools.filter((candidate) => candidate.annotations?.readOnlyHint).map((candidate) => candidate.name)).toEqual([
       'tda_get_capabilities',
       'tda_get_latest_result',
     ]);
-    const simplicial = tools.find((tool) => tool.name === 'tda_compute_simplicial_persistence')!;
-    const schema = simplicial.inputSchema as { properties: { complex: { enum: string[] } } };
+    const schema = tool(tools, 'tda_compute_simplicial_persistence').inputSchema as { properties: { complex: { enum: string[] } } };
     expect(schema.properties.complex.enum).toEqual(['rips', 'alpha', 'cech']);
-    expect(CAPABILITIES.simplicialComplexes.map((complex) => complex.id)).toEqual(['rips', 'alpha', 'cech']);
   });
 
-  it('passes the WebMCP cancellation signal into the computation backend', async () => {
-    const run = vi.fn().mockResolvedValue(fakeResult);
-    const runtime = new TdaRuntime({ run });
-    const tool = createWebMcpTools(runtime).find((candidate) => candidate.name === 'tda_compute_simplicial_persistence')!;
-    const controller = new AbortController();
-    await tool.execute({
-      complex: 'rips',
-      points: [[0, 0], [1, 0], [0, 1]],
-      parameters: { maxEdgeLength: 1.5 },
-    }, { signal: controller.signal });
-    expect(run).toHaveBeenCalledWith(expect.objectContaining({ kind: 'simplicial', complex: 'rips' }), expect.any(Object), controller.signal);
+  it('keeps descriptions within Chrome’s character budgets', () => {
+    const tools = createWebMcpTools(new TdaRuntime({ run: vi.fn() }));
+    for (const candidate of tools) {
+      expect(candidate.description.length, candidate.name).toBeLessThanOrEqual(500);
+      const properties = (candidate.inputSchema as { properties: Record<string, { description?: string }> }).properties;
+      for (const [name, schema] of Object.entries(properties)) {
+        expect((schema.description ?? '').length, `${candidate.name}.${name}`).toBeLessThanOrEqual(150);
+      }
+    }
   });
+});
 
-  it('keeps the newer result when overlapping computations finish out of order', async () => {
-    let resolveFirst: ((result: ComputeResult) => void) | undefined;
-    const newer = { ...fakeResult, complex: 'cech' as const };
+describe('overlapping and cancelled agent calls', () => {
+  it('lets the host abort a running call and rethrows, because nobody awaits a result', async () => {
+    let seen: AbortSignal | undefined;
     const backend: ComputeBackend = {
-      run: vi.fn()
-        .mockImplementationOnce(() => new Promise<ComputeResult>((resolve) => { resolveFirst = resolve; }))
-        .mockResolvedValueOnce(newer),
+      run: (_request, _image, signal) => new Promise<ComputeResult>((_resolve, reject) => {
+        seen = signal;
+        signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+      }),
+    };
+    const simplicial = tool(createWebMcpTools(new TdaRuntime(backend)), 'tda_compute_simplicial_persistence');
+    const host = new AbortController();
+    const call = simplicial.execute({ complex: 'rips', points: [[0, 0], [1, 0], [0, 1]] }, { signal: host.signal });
+    await vi.waitFor(() => expect(seen).toBeDefined());
+    host.abort(new DOMException('stopped', 'AbortError'));
+    await expect(call).rejects.toMatchObject({ name: 'AbortError' });
+    expect(seen?.aborted).toBe(true);
+  });
+
+  it('returns a cancelled result when the page, not the host, stops the run', async () => {
+    const backend: ComputeBackend = {
+      run: (_request, _image, signal) => new Promise<ComputeResult>((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+      }),
     };
     const runtime = new TdaRuntime(backend);
-    const first = runtime.computeSimplicial({ kind: 'simplicial', complex: 'rips', points: [[0, 0], [1, 0]] });
-    const second = runtime.computeSimplicial({ kind: 'simplicial', complex: 'cech', points: [[0, 0], [1, 0]] });
-    await expect(second).resolves.toMatchObject({ complex: 'cech' });
-    resolveFirst?.(fakeResult);
-    await expect(first).rejects.toThrow(/superseded/);
-    expect(runtime.getLatestResult().latestResult).toMatchObject({ complex: 'cech' });
+    const simplicial = tool(createWebMcpTools(runtime), 'tda_compute_simplicial_persistence');
+    const call = simplicial.execute({ complex: 'rips', points: [[0, 0], [1, 0], [0, 1]] }, { signal: new AbortController().signal });
+    runtime.cancel();
+    await expect(call).resolves.toMatchObject({ ok: false, error: { code: 'cancelled' } });
+  });
+
+  it('answers both of two overlapping calls and says which one the workbench shows', async () => {
+    const settle: Array<(result: ComputeResult) => void> = [];
+    const backend: ComputeBackend = { run: () => new Promise<ComputeResult>((resolve) => { settle.push(resolve); }) };
+    const simplicial = tool(createWebMcpTools(new TdaRuntime(backend)), 'tda_compute_simplicial_persistence');
+    const cloud = [[0, 0], [1, 0], [0, 1]];
+    const first = simplicial.execute({ complex: 'rips', points: cloud });
+    const second = simplicial.execute({ complex: 'cech', points: cloud });
+    settle[1]!(simplicialResult({ complex: 'cech' }));
+    settle[0]!(simplicialResult({ complex: 'rips' }));
+    await expect(second).resolves.toMatchObject({ ok: true, input: { complex: 'cech' }, shownInWorkspace: true });
+    await expect(first).resolves.toMatchObject({ ok: true, input: { complex: 'rips' }, shownInWorkspace: false });
   });
 });

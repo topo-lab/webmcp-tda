@@ -1,10 +1,13 @@
 import { getWorkspaceState, subscribeWorkspace, updateWorkspace, type WebMcpStatus } from '../state';
+import { isAbortError } from '../tda/errors';
 import { CAPABILITIES } from '../tda/capabilities';
 import { IMAGE_SAMPLES, loadImageSample, loadImageSource } from '../tda/imageSources';
 import { POINT_SAMPLE_IDS, pointSample, type PointSampleId } from '../tda/samples';
 import { binarizeImage, closeBinaryImage, gaussianBlurImage, otsuThreshold, type ForegroundPolarity } from '../tda/imageProcessing';
 import { tdaRuntime } from '../tda/runtime';
-import { defaultMaximumSimplexDimension, validateSimplicialRequest } from '../tda/validation';
+import { formatScale } from '../tda/scale';
+import { PERSISTENCE_FRACTION } from '../tda/summary';
+import { defaultMaximumSimplexDimension, MAX_POINTS, validateSimplicialRequest } from '../tda/validation';
 import { COMPLEX_KINDS } from '../tda/types';
 import type {
   ComplexKind,
@@ -49,11 +52,11 @@ interface ParameterField {
 
 const PARAMETER_FIELDS: Record<ComplexKind, ParameterField[]> = {
   rips: [
-    { key: 'maxEdgeLength', label: 'Maximum edge length', help: 'Connect points no farther apart than this.', min: 0.05, step: 0.05 },
+    { key: 'maxEdgeLength', label: 'Maximum edge length', help: 'Connect points no farther apart than this.' },
   ],
   alpha: [],
   cech: [
-    { key: 'maxRadius', label: 'Maximum ball radius', help: 'Grow equal-radius balls around every point.', min: 0.05, step: 0.05 },
+    { key: 'maxRadius', label: 'Maximum ball radius', help: 'Grow equal-radius balls around every point.' },
   ],
 };
 
@@ -163,6 +166,7 @@ export function imagePipelinePresentation(useBinaryMask: boolean): {
 export function parsePointInput(text: string): number[][] {
   const parsed = JSON.parse(text) as unknown;
   if (!Array.isArray(parsed) || parsed.length < 2) throw new Error('Enter an array containing at least two points.');
+  if (parsed.length > MAX_POINTS) throw new Error(`At most ${MAX_POINTS} points are supported.`);
   const dimension = Array.isArray(parsed[0]) ? parsed[0].length : 0;
   if (dimension !== 2 && dimension !== 3) throw new Error('Every point must have two or three coordinates.');
   if (!parsed.every((point) => Array.isArray(point) && point.length === dimension && point.every((value) => typeof value === 'number' && Number.isFinite(value)))) {
@@ -176,15 +180,27 @@ function identifyPointSample(points: number[][]): PointSampleId | 'custom' {
   return POINT_SAMPLE_IDS.find((id) => JSON.stringify(pointSample(id)) === serialized) ?? 'custom';
 }
 
-function resultDescription(result: ComputeResult): string {
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+export function resultDescription(result: ComputeResult): string {
+  const { persistence } = result;
+  const reliable = result.kind === 'simplicial' ? result.interpretation.reliableThroughDimension : Number.POSITIVE_INFINITY;
+  const found = [plural(persistence.essentialByDimension[0] ?? 0, 'connected component')];
+  if (reliable >= 1) found.push(`${plural(persistence.persistentByDimension[1] ?? 0, 'long-lived loop')} (H₁)`);
+  if (result.kind === 'simplicial' && result.input.dimension === 3 && reliable >= 2) {
+    found.push(`${plural(persistence.persistentByDimension[2] ?? 0, 'long-lived void')} (H₂)`);
+  }
+  const longLived = `Long-lived means the class never dies or lives at least ${formatScale(persistence.persistenceThreshold)} (${PERSISTENCE_FRACTION * 100}% of the filtration range).`;
   if (result.kind === 'simplicial') {
-    const base = `${COMPLEX_LABELS[result.complex]} on ${result.input.pointCount} ${result.input.dimension}D points produced ${metricValue(result.complexSummary.simplexCount)} simplices.`;
-    return result.interpretation.warning ? `${base} ${result.interpretation.warning}` : base;
+    const base = `${COMPLEX_LABELS[result.complex]} on ${result.input.pointCount} ${result.input.dimension}D points found ${found.join(', ')}. ${longLived}`;
+    return [base, ...result.interpretation.warnings].join(' ');
   }
   const preprocessing = result.input.binarized
     ? `It was segmented at gray level ${result.input.threshold} with ${result.input.foreground} pixels as foreground.`
     : 'Its grayscale values were used directly.';
-  return `${result.input.name} was analyzed as a ${result.input.width} × ${result.input.height} ${result.input.filtration} cubical filtration over F2. ${preprocessing}`;
+  return `${result.input.name} was analyzed as a ${result.input.width} × ${result.input.height} ${result.input.filtration} cubical filtration over F2. ${preprocessing} It has ${found.join(', ')}. ${longLived}`;
 }
 
 export function mountApp(root: HTMLElement): () => void {
@@ -223,7 +239,7 @@ export function mountApp(root: HTMLElement): () => void {
 
         <div class="workbench-grid">
           <div class="input-pane">
-            <form id="simplicial-panel" class="input-form" role="tabpanel" aria-labelledby="simplicial-tab">
+            <form id="simplicial-panel" class="input-form" role="tabpanel" aria-labelledby="simplicial-tab" novalidate>
               <div class="control-grid control-grid--three">
                 <label>Example dataset<select id="point-sample"><option value="circle">Circle · 2D</option><option value="figure-eight">Figure eight · 2D</option><option value="clusters">Two clusters · 2D</option><option value="sphere">Sphere · 3D</option><option value="custom">Custom / agent input</option></select></label>
                 <label>Complex<select id="complex-kind">${WORKBENCH_COMPLEX_KINDS.map((value) => `<option value="${value}">${COMPLEX_LABELS[value]}</option>`).join('')}</select></label>
@@ -245,7 +261,7 @@ export function mountApp(root: HTMLElement): () => void {
                 <label><span>Filtration scale</span><input id="filtration-progress" type="range" min="0" max="1000" value="1000" disabled></label>
                 <output id="filtration-value">Compute first</output>
               </div>
-              <div class="run-row run-row--after-player"><button id="run-simplicial" class="primary-action" type="submit">Compute simplicial persistence</button><p>Runs locally. Larger complexes may take a moment.</p></div>
+              <div class="run-row run-row--after-player"><button id="run-simplicial" class="primary-action" type="submit">Compute simplicial persistence</button><button id="cancel-simplicial" class="secondary-action cancel-compute" type="button" hidden>Cancel</button><p>Runs locally. Larger complexes may take a moment.</p></div>
               <div id="parameter-heading" class="parameter-heading"><div><h3>Filtration settings</h3><p>Only geometry-specific controls are shown.</p></div></div>
               <div id="parameter-fields" class="parameter-grid"></div>
               <details class="advanced-input">
@@ -255,7 +271,7 @@ export function mountApp(root: HTMLElement): () => void {
               </details>
             </form>
 
-            <form id="cubical-panel" class="input-form" role="tabpanel" aria-labelledby="cubical-tab" hidden>
+            <form id="cubical-panel" class="input-form" role="tabpanel" aria-labelledby="cubical-tab" novalidate hidden>
               <div class="control-grid control-grid--three">
                 <label>Example image<select id="image-sample">${Object.entries(IMAGE_SAMPLES).map(([value, sample]) => `<option value="${value}">${sample.label} photo</option>`).join('')}<option value="custom">Custom / agent image</option></select></label>
                 <label>Filtration<select id="filtration"><option value="sublevel">Sublevel · foreground first</option><option value="superlevel">Superlevel · background first</option></select></label>
@@ -280,7 +296,7 @@ export function mountApp(root: HTMLElement): () => void {
                   </div>
                 </div>
               </figure>
-              <div class="run-row"><button id="run-cubical" class="primary-action" type="submit">Compute cubical persistence</button><p>Images never leave your browser.</p></div>
+              <div class="run-row"><button id="run-cubical" class="primary-action" type="submit">Compute cubical persistence</button><button id="cancel-cubical" class="secondary-action cancel-compute" type="button" hidden>Cancel</button><p>Images never leave your browser.</p></div>
               <div class="method-note"><strong>How it works</strong><p>Photo → grayscale → gentle Gaussian denoise → Otsu or manual threshold → small-hole cleanup → binary cubical filtration over F₂. Turn off the mask to use grayscale intensities directly.</p></div>
             </form>
           </div>
@@ -289,12 +305,12 @@ export function mountApp(root: HTMLElement): () => void {
             <div class="result-heading"><div><p class="eyebrow">Shared result</p><h2 id="result-title">Persistence summary</h2></div><span id="compute-status" class="compute-status">Idle</span></div>
             <p id="activity" class="activity" role="status" aria-live="polite" aria-atomic="true">Choose an example and run a computation.</p>
             <div class="metric-grid" aria-label="Result metrics">
-              <div><span>Features</span><strong id="metric-features">—</strong></div>
-              <div><span>Essential</span><strong id="metric-essential">—</strong></div>
-              <div><span>H₁ loops</span><strong id="metric-loops">—</strong></div>
+              <div title="Connected components left at the end of the filtration (essential H₀ classes)."><span>Components</span><strong id="metric-components">—</strong></div>
+              <div title="H₁ classes that never die or live at least 10% of the filtration range."><span>Loops</span><strong id="metric-loops">—</strong></div>
+              <div title="H₂ classes of a 3D cloud that never die or live at least 10% of the filtration range."><span>Voids</span><strong id="metric-voids">—</strong></div>
               <div><span>Runtime</span><strong id="metric-runtime">—</strong></div>
             </div>
-            <figure class="diagram-card"><figcaption><span>Persistence diagram</span><span class="diagram-legend"><i class="h0"></i>H₀ <i class="h1"></i>H₁ <i class="h2"></i>H₂</span></figcaption><div id="diagram" role="group" aria-label="Interactive persistence diagram"></div></figure>
+            <figure class="diagram-card"><figcaption><span>Persistence diagram</span><span class="diagram-legend"><i class="h0"></i>H₀ <i class="h1"></i>H₁ <i class="h2"></i>H₂</span></figcaption><div id="diagram" role="group" aria-label="Interactive persistence diagram"></div><p id="diagram-note" class="diagram-note">Run a computation to see its pairs.</p></figure>
             <div class="interpretation"><strong>What this result says</strong><p id="result-description">Connected components, loops, and higher-dimensional features will appear here after computation.</p></div>
             <details class="raw-result"><summary>Inspect structured result</summary><button id="copy-result" class="secondary-action" type="button" disabled>Copy JSON</button><pre id="result-json">No result yet.</pre></details>
           </aside>
@@ -362,9 +378,12 @@ export function mountApp(root: HTMLElement): () => void {
   const webMcpStatus = element<HTMLElement>('#webmcp-status');
   const runSimplicial = element<HTMLButtonElement>('#run-simplicial');
   const runCubical = element<HTMLButtonElement>('#run-cubical');
-  const metricFeatures = element<HTMLElement>('#metric-features');
-  const metricEssential = element<HTMLElement>('#metric-essential');
+  const metricComponents = element<HTMLElement>('#metric-components');
   const metricLoops = element<HTMLElement>('#metric-loops');
+  const metricVoids = element<HTMLElement>('#metric-voids');
+  const diagramNote = element<HTMLElement>('#diagram-note');
+  const cancelButtons = [...document.querySelectorAll<HTMLButtonElement>('.cancel-compute')];
+  const resultPane = element<HTMLElement>('.result-pane');
   const metricRuntime = element<HTMLElement>('#metric-runtime');
 
   let currentPoints = pointSample('circle');
@@ -511,19 +530,28 @@ export function mountApp(root: HTMLElement): () => void {
   };
 
   let imageLoadGeneration = 0;
-  const setImage = (image: ScalarImage, label: string, rgba?: Uint8ClampedArray) => {
+  const setImage = (image: ScalarImage, label: string | null, rgba?: Uint8ClampedArray) => {
     automaticThreshold = true;
     invalidateImageResult();
-    updateWorkspace({ currentImage: image, currentImageRgba: rgba ?? null, activity: `Loaded ${label}.`, error: null });
+    updateWorkspace({
+      currentImage: image,
+      currentImageRgba: rgba ?? null,
+      error: null,
+      ...(label === null ? {} : { activity: `Loaded ${label}.` }),
+    });
   };
 
-  const loadSelectedImageSample = async (id: ImageSampleId) => {
+  /** The preload of the default image is silent: the person is looking at the point-cloud tab. */
+  const loadSelectedImageSample = async (id: ImageSampleId, { quiet = false }: { quiet?: boolean } = {}) => {
     const generation = ++imageLoadGeneration;
     const sample = IMAGE_SAMPLES[id];
+    const imageWhenStarted = getWorkspaceState().currentImage;
     invalidateImageResult();
-    updateWorkspace({ activity: `Loading the ${sample.label.toLowerCase()} example…`, error: null });
+    if (!quiet) updateWorkspace({ activity: `Loading the ${sample.label.toLowerCase()} example…`, error: null });
     const loaded = await loadImageSample(id);
-    if (generation === imageLoadGeneration) setImage(loaded.image, sample.label.toLowerCase(), loaded.rgba);
+    // A preload nobody asked for must not replace an image the person or an agent set while it was loading.
+    const replacedMeanwhile = quiet && getWorkspaceState().currentImage !== imageWhenStarted;
+    if (generation === imageLoadGeneration && !replacedMeanwhile) setImage(loaded.image, quiet ? null : sample.label.toLowerCase(), loaded.rgba);
   };
 
   const renderParameters = (kind: ComplexKind) => {
@@ -602,23 +630,33 @@ export function mountApp(root: HTMLElement): () => void {
     }
   };
 
+  let renderedResult: ComputeResult | null | undefined;
   const updateResult = (result: ComputeResult | null) => {
+    if (result === renderedResult) return;
+    renderedResult = result;
     if (!result) {
       resetFiltration();
-      metricFeatures.textContent = '—';
-      metricEssential.textContent = '—';
+      metricComponents.textContent = '—';
       metricLoops.textContent = '—';
+      metricVoids.textContent = '—';
       metricRuntime.textContent = '—';
+      diagramNote.textContent = 'Run a computation to see its pairs.';
       resultDescriptionElement.textContent = 'Connected components, loops, and higher-dimensional features will appear here after computation.';
       resultJson.textContent = '';
       copyResult.disabled = true;
       renderPersistenceDiagram(diagram, []);
       return;
     }
-    metricFeatures.textContent = metricValue(result.persistence.pairCount);
-    metricEssential.textContent = metricValue(result.persistence.essentialCount);
-    metricLoops.textContent = metricValue(result.persistence.pairsByDimension[1] ?? 0);
+    const reliable = result.kind === 'simplicial' ? result.interpretation.reliableThroughDimension : Number.POSITIVE_INFINITY;
+    metricComponents.textContent = metricValue(result.persistence.essentialByDimension[0] ?? 0);
+    metricLoops.textContent = reliable >= 1 ? metricValue(result.persistence.persistentByDimension[1] ?? 0) : '—';
+    metricVoids.textContent = result.kind === 'simplicial' && result.input.dimension === 3 && reliable >= 2
+      ? metricValue(result.persistence.persistentByDimension[2] ?? 0)
+      : '—';
     metricRuntime.textContent = `${metricValue(result.elapsedMs)} ms`;
+    const hiddenPairs = Object.values(result.persistence.excludedPairs).reduce((sum, count) => sum + count, 0);
+    diagramNote.textContent = `Showing ${result.persistence.returnedPairCount} of ${result.persistence.pairCount} pairs`
+      + (hiddenPairs > 0 ? ` · ${hiddenPairs} truncation artifacts hidden` : '');
     resultDescriptionElement.textContent = resultDescription(result);
     resultJson.textContent = JSON.stringify(result, null, 2);
     copyResult.disabled = false;
@@ -781,8 +819,21 @@ export function mountApp(root: HTMLElement): () => void {
   filtration.addEventListener('change', invalidateImageResult);
   downsample.addEventListener('change', invalidateImageResult);
 
+  /** A run that fails reports itself; a request refused before it starts has to be shown here. */
+  const reportFailure = (error: unknown) => {
+    if (isAbortError(error) || getWorkspaceState().status === 'error') return;
+    updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error), activity: 'Computation failed.' });
+  };
+
+  const revealResult = () => {
+    if (!window.matchMedia('(max-width: 1120px)').matches) return;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    resultPane.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+  };
+
   simplicialPanel.addEventListener('submit', (event) => {
     event.preventDefault();
+    if (getWorkspaceState().status === 'computing') return;
     try {
       const points = parsePointInput(pointsInput.value);
       const request = validateSimplicialRequest({
@@ -792,14 +843,17 @@ export function mountApp(root: HTMLElement): () => void {
         coefficientField: Number(coefficientField.value),
         parameters: readParameters(points),
       });
-      void tdaRuntime.computeSimplicial(request).catch(() => undefined);
+      void tdaRuntime.computeSimplicial(request).catch(reportFailure);
     } catch (error) {
       updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error), activity: 'Check the point coordinates and filtration settings.' });
     }
+    revealResult();
   });
 
   cubicalPanel.addEventListener('submit', (event) => {
     event.preventDefault();
+    if (getWorkspaceState().status === 'computing') return;
+    revealResult();
     void tdaRuntime.computeCubical({
       kind: 'cubical',
       source: 'current',
@@ -808,8 +862,10 @@ export function mountApp(root: HTMLElement): () => void {
       foreground: foreground.value as ForegroundPolarity,
       filtration: filtration.value as CubicalRequest['filtration'],
       downsample: Number(downsample.value) as 1 | 2 | 4,
-    }).catch(() => undefined);
+    }).catch(reportFailure);
   });
+
+  cancelButtons.forEach((button) => button.addEventListener('click', () => tdaRuntime.cancel()));
 
   copyResult.addEventListener('click', () => {
     void navigator.clipboard.writeText(resultJson.textContent ?? '').then(() => {
@@ -821,6 +877,7 @@ export function mountApp(root: HTMLElement): () => void {
   });
 
   let lastSyncedRequest: unknown = null;
+  let previewedImage: ScalarImage | null = null;
 
   const unsubscribe = subscribeWorkspace((state) => {
     if (state.latestRequest && state.latestRequest !== lastSyncedRequest) {
@@ -862,11 +919,16 @@ export function mountApp(root: HTMLElement): () => void {
     computeStatus.dataset.status = state.status;
     activity.textContent = state.error ?? state.activity;
     const activeKind = (state.latestRequest as { kind?: string } | null)?.kind;
-    runSimplicial.disabled = state.status === 'computing';
-    runCubical.disabled = state.status === 'computing';
+    const busy = state.status === 'computing';
+    runSimplicial.setAttribute('aria-disabled', String(busy));
+    runCubical.setAttribute('aria-disabled', String(busy));
+    cancelButtons.forEach((button) => { button.hidden = !busy; });
     runSimplicial.textContent = state.status === 'computing' && activeKind === 'simplicial' ? 'Computing…' : 'Compute simplicial persistence';
     runCubical.textContent = state.status === 'computing' && activeKind === 'cubical' ? 'Computing…' : 'Compute cubical persistence';
-    syncImagePreview(state.currentImage);
+    if (state.currentImage !== previewedImage) {
+      previewedImage = state.currentImage;
+      syncImagePreview(state.currentImage);
+    }
     imageMeta.textContent = `${state.currentImage.name} · ${state.currentImage.width} × ${state.currentImage.height}`;
     updateResult(state.latestResult);
   });
@@ -874,7 +936,7 @@ export function mountApp(root: HTMLElement): () => void {
   renderParameters('rips');
   setPoints(currentPoints);
   syncImagePreview(getWorkspaceState().currentImage);
-  void loadSelectedImageSample('donut').catch((error: unknown) => updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) }));
+  void loadSelectedImageSample('donut', { quiet: true }).catch((error: unknown) => updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) }));
 
   return () => {
     stopFiltrationAnimation();

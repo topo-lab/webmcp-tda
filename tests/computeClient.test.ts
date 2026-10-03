@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ComputeClient, type WorkerTransport } from '../src/tda/computeClient';
+import { simplicialResult } from './helpers/fixtures';
 import type { ComputeResult, ScalarImage, SimplicialRequest, WorkerRequestMessage, WorkerResponseMessage } from '../src/tda/types';
 
 class FakeWorker implements WorkerTransport {
@@ -35,16 +36,7 @@ const currentImage: ScalarImage = {
   values: [0, 255, 255, 0],
 };
 
-const result: ComputeResult = {
-  kind: 'simplicial',
-  complex: 'rips',
-  input: { pointCount: 2, dimension: 2, coefficientField: 2, parameters: { maxSimplexDimension: 2 } },
-  complexSummary: { simplexCount: 3, simplexCountsByDimension: { 0: 2, 1: 1 }, maxDimension: 1 },
-  visualization: { supported: true, reason: null, simplices: [{ vertices: [0, 1], filtration: 1 }], simplexCount: 1, edges: [{ vertices: [0, 1], filtration: 1 }], edgeCount: 1, truncated: false, minFiltration: 0, maxFiltration: 1 },
-  persistence: { pairCount: 1, pairsByDimension: { 0: 1 }, essentialCount: 1, returnedPairCount: 1, strongestPairs: [] },
-  interpretation: { reliableThroughDimension: 1, warning: null },
-  elapsedMs: 1,
-};
+const result: ComputeResult = simplicialResult();
 
 describe('ComputeClient cancellation', () => {
   it('terminates an active Worker and runs the queued request in a fresh Worker', async () => {

@@ -69,7 +69,7 @@ describe("Release controls — full workbench input matrix", () => {
     cy.screenshot("edited-coordinates-recomputed");
   });
 
-  it("exports the diagram, resets its axes, and cancels cloud sharing without uploading", () => {
+  it("exports the diagram, resets its axes, and offers no way to upload it", () => {
     cy.visit("/");
     cy.get("#run-simplicial").click();
     ready();
@@ -90,10 +90,10 @@ describe("Release controls — full workbench input matrix", () => {
         (plot[0] as any).layout.xaxis.range.every(Number.isFinite),
       ).to.equal(true),
     );
-    cy.get('#diagram [data-title="Share chart..."]').click();
-    cy.contains("This chart will be uploaded").should("be.visible");
-    cy.contains("button", /^Cancel$/).click();
-    cy.contains("This chart will be uploaded").should("not.exist");
+    // Plotly 4 adds a "Share chart..." button that uploads to Plotly Cloud; this page says nothing leaves the browser.
+    cy.get("#diagram .modebar-btn").should("have.length.greaterThan", 0);
+    cy.get('#diagram [data-title="Share chart..."]').should("not.exist");
+    cy.get("#diagram .modebar-btn[data-title*='hare']").should("not.exist");
   });
 
   it("computes both image filtrations, all resolutions, foregrounds, and threshold modes", () => {

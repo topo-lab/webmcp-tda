@@ -1,4 +1,12 @@
 import { IMAGE_SAMPLE_IDS, type ComplexKind } from './types';
+import {
+  DEFAULT_RESULT_LIMIT,
+  MAX_COORDINATE_MAGNITUDE,
+  MAX_IMAGE_VALUES,
+  MAX_POINTS,
+  MAX_POTENTIAL_SIMPLICES,
+  MAX_RESULT_LIMIT,
+} from './validation';
 
 export interface ComplexCapability {
   id: ComplexKind;
@@ -45,11 +53,20 @@ export const CAPABILITIES = {
   execution: 'browser-local WebAssembly in a Web Worker',
   persistence: 'one-parameter persistent homology over a prime coefficient field',
   limits: {
-    maximumPoints: 256,
-    maximumImageVertices: 65_536,
-    maximumReturnedPairs: 200,
-    maximumPotentialSimplices: 2_000_000,
-    maximumCoordinateMagnitude: 1_000_000,
+    maximumPoints: MAX_POINTS,
+    maximumImageVertices: MAX_IMAGE_VALUES,
+    maximumReturnedPairs: MAX_RESULT_LIMIT,
+    maximumPotentialSimplices: MAX_POTENTIAL_SIMPLICES,
+    maximumCoordinateMagnitude: MAX_COORDINATE_MAGNITUDE,
+  },
+  defaults: {
+    scale: 'maxEdgeLength (Rips) and maxRadius (Čech) default to the diameter of the point cloud, so no scale cuts the filtration off',
+    resultLimit: DEFAULT_RESULT_LIMIT,
+  },
+  results: {
+    reliableDimensions: 'H0 and H1 for 2D clouds, H0 to H2 for 3D clouds; classes above that are truncation artifacts and are counted as excluded, not returned',
+    longLived: 'a class is long-lived when it never dies or lives at least 10% of the filtration range',
+    errors: 'failures are returned as {ok:false, error:{code, message, field, hint}} instead of being thrown',
   },
   simplicialComplexes: COMPLEX_CAPABILITIES,
   cubical: {
