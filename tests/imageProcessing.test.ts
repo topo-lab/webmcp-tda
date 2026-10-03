@@ -30,4 +30,18 @@ describe('image binarization', () => {
     const closed = closeBinaryImage({ name: 'mask', width: 7, height: 7, values }, 1);
     expect(closed.values[3 * 7 + 3]).toBe(0);
   });
+
+  it('keeps an object that touches the image border instead of eroding it away from the edge', () => {
+    const dark = { name: 'full', width: 20, height: 20, values: Array<number>(400).fill(0) };
+    expect(closeBinaryImage(dark).values.every((value) => value === 0)).toBe(true);
+
+    // A 4-pixel-thick frame along the left edge keeps its width, and an inner hole is still closed.
+    const values = Array<number>(20 * 20).fill(255);
+    for (let y = 0; y < 20; y += 1) for (let x = 0; x < 4; x += 1) values[y * 20 + x] = 0;
+    const closed = closeBinaryImage({ name: 'edge', width: 20, height: 20, values });
+    for (let y = 0; y < 20; y += 1) {
+      expect(closed.values.slice(y * 20, y * 20 + 4)).toEqual([0, 0, 0, 0]);
+      expect(closed.values[y * 20 + 4]).toBe(255);
+    }
+  });
 });
