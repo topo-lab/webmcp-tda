@@ -14,13 +14,15 @@ This folder contains the copy and media for the WebMCP Challenge submission.
 - `capture-media.cy.ts`: reproducible Cypress screenshot capture script.
 - `thumbnail.html`: editable source for the custom thumbnail.
 
-## Before submitting
+## Final handoff
 
-1. Open the live site in ChatGPT's in-app browser and run the prompts in `video/demo-script.md`.
-2. Record that interaction with your own narration if possible. It is stronger evidence than the prepared slideshow draft because it shows real WebMCP tool invocation.
-3. Upload the selected video to YouTube as Public or Unlisted.
-4. Add the YouTube URL to `devpost-submission.md` and the Devpost form.
-5. Upload `images/thumbnail-3x2.png` as the thumbnail and the five numbered gallery images as project media.
-6. Paste the project story and additional-information answers from `devpost-submission.md`.
+The deployed site has been verified in ChatGPT's in-app browser, and the public repositories, MIT license, clean-clone installation, automated tests, and Cloudflare deployment are complete.
 
-The prepared draft video satisfies the duration and audio constraints, but it does not show the ChatGPT tool-call interface. Use it only if there is not enough time to record the preferred live-agent version.
+If the Devpost media fields are not already complete:
+
+1. Upload the selected video to YouTube as Public or Unlisted.
+2. Add the YouTube URL to `devpost-submission.md` and the Devpost form.
+3. Upload `images/thumbnail-3x2.png` as the thumbnail and the five numbered gallery images as project media.
+4. Paste the project story and additional-information answers from `devpost-submission.md`.
+
+The prepared draft video satisfies the duration and audio constraints, but it does not show the ChatGPT tool-call interface. The script in `video/demo-script.md` remains the preferred source for a live-agent recording.

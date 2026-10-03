@@ -134,13 +134,7 @@ https://github.com/topo-lab/webmcp-tda
 
 ### Agents or clients tested
 
-Current honest answer before the manual smoke test:
-
-`Automated WebMCP registration and tool-contract tests. ChatGPT in-app browser smoke test pending.`
-
-After completing the steps above successfully, replace it with:
-
-`ChatGPT in-app browser, plus automated WebMCP registration and tool-contract tests.`
+ChatGPT in-app browser, plus automated WebMCP registration, schema, execution, cancellation, and browser interaction tests.
 
 ### AI tools used
 
@@ -156,11 +150,11 @@ Yes, somewhat. The project produced reusable patterns for agent-facing schemas, 
 
 ## Final form checklist
 
-- Add a 3:2 thumbnail from `submission/images/thumbnail-3x2.png`.
-- Add the screenshots from `submission/images/` to the image gallery.
-- Upload the final video to YouTube as Public or Unlisted.
-- Replace `ADD_PUBLIC_YOUTUBE_URL` with the YouTube URL.
-- Complete the ChatGPT in-app browser smoke test and update the tested-client answer.
-- Confirm the GitHub repository is public and the MIT license is visible.
-- Confirm the Cloudflare URL opens without credentials.
-- Select the exact Devpost dropdown wording that corresponds to Individual, Japan, Existing project, Some learning, and Some career value.
+- [x] Complete the ChatGPT in-app browser smoke test.
+- [x] Confirm the GitHub repository is public and the MIT license is visible.
+- [x] Confirm the Cloudflare URL opens without credentials.
+- [ ] Add the 3:2 thumbnail from `submission/images/thumbnail-3x2.png`.
+- [ ] Add the screenshots from `submission/images/` to the image gallery.
+- [ ] Upload the final video to YouTube as Public or Unlisted.
+- [ ] Replace `ADD_PUBLIC_YOUTUBE_URL` with the YouTube URL.
+- [ ] Select the exact Devpost dropdown wording that corresponds to Individual, Japan, Existing project, Some learning, and Some career value.
