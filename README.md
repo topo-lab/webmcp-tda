@@ -55,7 +55,9 @@ WebMCP needs tests at three layers because browser discovery alone does not prov
 
 Use the [live agent acceptance checklist](docs/AGENT_ACCEPTANCE.md) for reproducible closed-form computations, shared-state invalidation, malformed-input rejection, and recovery through a real browser tool channel.
 
-`npm run test:coverage` enforces 100% statements, branches, functions, and lines for the runtime WebMCP boundary in `src/webmcp/register.ts` and `src/webmcp/tools.ts`. The wider application keeps its normal full-suite reporting separate, so generated code, visualization code, and Worker code are not mislabeled as covered by these contract tests.
+`npm run test:coverage` reports all first-party `src/**/*.ts` files, including unexecuted UI and Worker code, to `coverage/all`. It separately enforces 100% statements, branches, functions, and lines for the runtime WebMCP boundary in `src/webmcp/register.ts` and `src/webmcp/tools.ts`; that is not a whole-application coverage claim. Generated/vendor code is outside this first-party report.
+
+The worker oracle suite runs the checked-in real WASM against an independent small-complex F2 boundary-matrix reduction: 128 seeded vertex-grid filtrations, sublevel/superlevel/downsampling cases, exhaustive small Rips complexes, and analytic square and binary two-hole examples. Image tests independently check Otsu's objective and the Gaussian convolution. These are correctness checks, not just execution counts; they do not establish real `document.modelContext` agent invocation or complete browser/GPU coverage.
 
 For local Chrome testing, enable `chrome://flags/#enable-webmcp-testing` and relaunch Chrome. Codex and ChatGPT Work can discover imperative tools registered by the top-level page in the ChatGPT desktop app's built-in browser. Current built-in-browser support does not include declarative tools or tools registered inside iframes.
 
