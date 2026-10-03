@@ -13,6 +13,12 @@ export class TdaRuntime {
 
   constructor(private readonly backend: ComputeBackend = computeClient) {}
 
+  /** Input edits also supersede a computation that is still running. */
+  invalidateResult(activity: string): void {
+    ++this.generation;
+    updateWorkspace({ status: 'idle', latestResult: null, error: null, activity });
+  }
+
   async computeSimplicial(request: SimplicialRequest, signal?: AbortSignal): Promise<ComputeResult> {
     validateSimplicialRequest(request);
     return this.run(request, signal);

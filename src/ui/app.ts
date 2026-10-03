@@ -4,7 +4,7 @@ import { IMAGE_SAMPLES, loadImageSample, loadImageSource } from '../tda/imageSou
 import { POINT_SAMPLE_IDS, pointSample, type PointSampleId } from '../tda/samples';
 import { binarizeImage, closeBinaryImage, gaussianBlurImage, otsuThreshold, type ForegroundPolarity } from '../tda/imageProcessing';
 import { tdaRuntime } from '../tda/runtime';
-import { defaultMaximumSimplexDimension } from '../tda/validation';
+import { defaultMaximumSimplexDimension, validateSimplicialRequest } from '../tda/validation';
 import { COMPLEX_KINDS } from '../tda/types';
 import type {
   ComplexKind,
@@ -217,13 +217,13 @@ export function mountApp(root: HTMLElement): () => void {
         </div>
 
         <div class="mode-switch" role="tablist" aria-label="Input type">
-          <button class="mode-tab" type="button" role="tab" aria-selected="true" aria-controls="simplicial-panel" data-mode="simplicial"><span>Point cloud</span><small>Simplicial persistence</small></button>
-          <button class="mode-tab" type="button" role="tab" aria-selected="false" aria-controls="cubical-panel" data-mode="cubical"><span>Image</span><small>Cubical persistence</small></button>
+          <button id="simplicial-tab" class="mode-tab" type="button" role="tab" aria-selected="true" aria-controls="simplicial-panel" tabindex="0" data-mode="simplicial"><span>Point cloud</span><small>Simplicial persistence</small></button>
+          <button id="cubical-tab" class="mode-tab" type="button" role="tab" aria-selected="false" aria-controls="cubical-panel" tabindex="-1" data-mode="cubical"><span>Image</span><small>Cubical persistence</small></button>
         </div>
 
         <div class="workbench-grid">
           <div class="input-pane">
-            <form id="simplicial-panel" class="input-form" role="tabpanel" aria-label="Simplicial persistence controls">
+            <form id="simplicial-panel" class="input-form" role="tabpanel" aria-labelledby="simplicial-tab">
               <div class="control-grid control-grid--three">
                 <label>Example dataset<select id="point-sample"><option value="circle">Circle · 2D</option><option value="figure-eight">Figure eight · 2D</option><option value="clusters">Two clusters · 2D</option><option value="sphere">Sphere · 3D</option><option value="custom">Custom / agent input</option></select></label>
                 <label>Complex<select id="complex-kind">${WORKBENCH_COMPLEX_KINDS.map((value) => `<option value="${value}">${COMPLEX_LABELS[value]}</option>`).join('')}</select></label>
@@ -232,7 +232,7 @@ export function mountApp(root: HTMLElement): () => void {
               <p id="complex-note" class="context-note"></p>
               <figure class="data-stage">
                 <figcaption><span>Point-cloud preview</span><strong id="point-meta">32 points · 2D</strong></figcaption>
-                <div id="point-preview" class="point-cloud-stage" role="img" aria-label="Interactive point-cloud preview"></div>
+                <div id="point-preview" class="point-cloud-stage" role="group" aria-label="Interactive point-cloud preview"></div>
                 <div id="point-tools" class="point-tools" role="toolbar" aria-label="Point-cloud display and editing tools">
                   <button type="button" data-point-tool="move" aria-pressed="true"><span aria-hidden="true">↔</span> Move</button>
                   <button type="button" data-point-tool="edit" aria-pressed="false"><span aria-hidden="true">x,y</span> Edit</button>
@@ -255,7 +255,7 @@ export function mountApp(root: HTMLElement): () => void {
               </details>
             </form>
 
-            <form id="cubical-panel" class="input-form" role="tabpanel" aria-label="Cubical persistence controls" hidden>
+            <form id="cubical-panel" class="input-form" role="tabpanel" aria-labelledby="cubical-tab" hidden>
               <div class="control-grid control-grid--three">
                 <label>Example image<select id="image-sample">${Object.entries(IMAGE_SAMPLES).map(([value, sample]) => `<option value="${value}">${sample.label} photo</option>`).join('')}<option value="custom">Custom / agent image</option></select></label>
                 <label>Filtration<select id="filtration"><option value="sublevel">Sublevel · foreground first</option><option value="superlevel">Superlevel · background first</option></select></label>
@@ -294,7 +294,7 @@ export function mountApp(root: HTMLElement): () => void {
               <div><span>H₁ loops</span><strong id="metric-loops">—</strong></div>
               <div><span>Runtime</span><strong id="metric-runtime">—</strong></div>
             </div>
-            <figure class="diagram-card"><figcaption><span>Persistence diagram</span><span class="diagram-legend"><i class="h0"></i>H₀ <i class="h1"></i>H₁ <i class="h2"></i>H₂</span></figcaption><div id="diagram" role="img" aria-label="Interactive persistence diagram"></div></figure>
+            <figure class="diagram-card"><figcaption><span>Persistence diagram</span><span class="diagram-legend"><i class="h0"></i>H₀ <i class="h1"></i>H₁ <i class="h2"></i>H₂</span></figcaption><div id="diagram" role="group" aria-label="Interactive persistence diagram"></div></figure>
             <div class="interpretation"><strong>What this result says</strong><p id="result-description">Connected components, loops, and higher-dimensional features will appear here after computation.</p></div>
             <details class="raw-result"><summary>Inspect structured result</summary><button id="copy-result" class="secondary-action" type="button" disabled>Copy JSON</button><pre id="result-json">No result yet.</pre></details>
           </aside>
@@ -380,7 +380,11 @@ export function mountApp(root: HTMLElement): () => void {
   const pointVisualization = mountPointCloudVisualization(pointPreview);
 
   const setMode = (mode: 'simplicial' | 'cubical') => {
-    modeTabs.forEach((tab) => tab.setAttribute('aria-selected', String(tab.dataset.mode === mode)));
+    modeTabs.forEach((tab) => {
+      const selected = tab.dataset.mode === mode;
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+    });
     simplicialPanel.hidden = mode !== 'simplicial';
     cubicalPanel.hidden = mode !== 'cubical';
     if (mode === 'cubical' && activeSimplicialResult) {
@@ -446,12 +450,7 @@ export function mountApp(root: HTMLElement): () => void {
         activeSimplicialResult = null;
         filtrationRatio = 1;
         showFiltrationPlayhead = false;
-        updateWorkspace({
-          status: 'idle',
-          latestResult: null,
-          error: null,
-          activity: 'Point coordinates changed. Compute persistence to rebuild the filtration.',
-        });
+        tdaRuntime.invalidateResult('Point coordinates changed. Compute persistence to rebuild the filtration.');
         setPoints(nextPoints);
         pointSampleSelect.value = 'custom';
       } : undefined,
@@ -507,18 +506,21 @@ export function mountApp(root: HTMLElement): () => void {
     pointsInput.value = JSON.stringify(points, null, 2);
     pointFeedback.textContent = 'Every point must have two or three coordinates.';
     pointFeedback.dataset.status = 'valid';
+    pointsInput.setAttribute('aria-invalid', 'false');
     syncPointPreview();
   };
 
   let imageLoadGeneration = 0;
   const setImage = (image: ScalarImage, label: string, rgba?: Uint8ClampedArray) => {
     automaticThreshold = true;
+    invalidateImageResult();
     updateWorkspace({ currentImage: image, currentImageRgba: rgba ?? null, activity: `Loaded ${label}.`, error: null });
   };
 
   const loadSelectedImageSample = async (id: ImageSampleId) => {
     const generation = ++imageLoadGeneration;
     const sample = IMAGE_SAMPLES[id];
+    invalidateImageResult();
     updateWorkspace({ activity: `Loading the ${sample.label.toLowerCase()} example…`, error: null });
     const loaded = await loadImageSample(id);
     if (generation === imageLoadGeneration) setImage(loaded.image, sample.label.toLowerCase(), loaded.rgba);
@@ -590,7 +592,14 @@ export function mountApp(root: HTMLElement): () => void {
     filtrationProgress.disabled = true;
     toggleFiltration.textContent = 'Play filtration';
     filtrationValue.value = 'Compute first';
-    if (message) updateWorkspace({ status: 'idle', latestResult: null, error: null, activity: message });
+    if (message) tdaRuntime.invalidateResult(message);
+  };
+
+  const invalidateImageResult = () => {
+    const state = getWorkspaceState();
+    if (state.latestResult?.kind === 'cubical' || (state.status === 'computing' && (state.latestRequest as { kind?: string })?.kind === 'cubical')) {
+      tdaRuntime.invalidateResult('Image settings changed. Compute persistence to update the result.');
+    }
   };
 
   const updateResult = (result: ComputeResult | null) => {
@@ -640,7 +649,21 @@ export function mountApp(root: HTMLElement): () => void {
     }
   };
 
-  modeTabs.forEach((tab) => tab.addEventListener('click', () => setMode(tab.dataset.mode as 'simplicial' | 'cubical')));
+  modeTabs.forEach((tab, index) => {
+    tab.addEventListener('click', () => setMode(tab.dataset.mode as 'simplicial' | 'cubical'));
+    tab.addEventListener('keydown', (event) => {
+      let next: number;
+      if (event.key === 'ArrowRight') next = (index + 1) % modeTabs.length;
+      else if (event.key === 'ArrowLeft') next = (index + modeTabs.length - 1) % modeTabs.length;
+      else if (event.key === 'Home') next = 0;
+      else if (event.key === 'End') next = modeTabs.length - 1;
+      else return;
+      event.preventDefault();
+      const target = modeTabs[next]!;
+      setMode(target.dataset.mode as 'simplicial' | 'cubical');
+      target.focus();
+    });
+  });
 
   pointToolButtons.forEach((button) => button.addEventListener('click', () => {
     pointInteractionMode = button.dataset.pointTool as 'move' | 'edit';
@@ -665,19 +688,28 @@ export function mountApp(root: HTMLElement): () => void {
     syncPointPreview();
   });
 
-  parameterFields.addEventListener('input', syncPointPreview);
+  coefficientField.addEventListener('change', () => {
+    resetFiltration('Coefficient field changed. Compute persistence to update the result.');
+  });
+
+  parameterFields.addEventListener('input', () => {
+    resetFiltration('Filtration settings changed. Compute persistence to rebuild the filtration.');
+    syncPointPreview();
+  });
 
   pointsInput.addEventListener('input', () => {
+    resetFiltration('Point coordinates changed. Compute persistence to rebuild the filtration.');
     try {
       currentPoints = parsePointInput(pointsInput.value);
-      resetFiltration('Point coordinates changed. Compute persistence to rebuild the filtration.');
       pointSampleSelect.value = identifyPointSample(currentPoints);
       pointFeedback.textContent = `${currentPoints.length} points ready.`;
       pointFeedback.dataset.status = 'valid';
+      pointsInput.setAttribute('aria-invalid', 'false');
       syncPointPreview();
     } catch (error) {
       pointFeedback.textContent = error instanceof Error ? error.message : 'Invalid point data.';
       pointFeedback.dataset.status = 'error';
+      pointsInput.setAttribute('aria-invalid', 'true');
     }
   });
 
@@ -719,6 +751,7 @@ export function mountApp(root: HTMLElement): () => void {
   imageFile.addEventListener('change', () => {
     const file = imageFile.files?.[0];
     if (!file) return;
+    invalidateImageResult();
     const generation = ++imageLoadGeneration;
     void loadImageSource(file, file.name).then((loaded) => {
       if (generation !== imageLoadGeneration) return;
@@ -727,28 +760,39 @@ export function mountApp(root: HTMLElement): () => void {
     }).catch((error: unknown) => updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) }));
   });
 
-  binarize.addEventListener('change', () => syncImagePreview(getWorkspaceState().currentImage));
+  binarize.addEventListener('change', () => {
+    invalidateImageResult();
+    syncImagePreview(getWorkspaceState().currentImage);
+  });
   threshold.addEventListener('input', () => {
     automaticThreshold = false;
+    invalidateImageResult();
     syncImagePreview(getWorkspaceState().currentImage);
   });
   autoThreshold.addEventListener('click', () => {
     automaticThreshold = true;
+    invalidateImageResult();
     syncImagePreview(getWorkspaceState().currentImage);
   });
-  foreground.addEventListener('change', () => syncImagePreview(getWorkspaceState().currentImage));
+  foreground.addEventListener('change', () => {
+    invalidateImageResult();
+    syncImagePreview(getWorkspaceState().currentImage);
+  });
+  filtration.addEventListener('change', invalidateImageResult);
+  downsample.addEventListener('change', invalidateImageResult);
 
   simplicialPanel.addEventListener('submit', (event) => {
     event.preventDefault();
     try {
       const points = parsePointInput(pointsInput.value);
-      void tdaRuntime.computeSimplicial({
+      const request = validateSimplicialRequest({
         kind: 'simplicial',
         complex: complexSelect.value as ComplexKind,
         points,
         coefficientField: Number(coefficientField.value),
         parameters: readParameters(points),
-      }).catch(() => undefined);
+      });
+      void tdaRuntime.computeSimplicial(request).catch(() => undefined);
     } catch (error) {
       updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error), activity: 'Check the point coordinates and filtration settings.' });
     }
