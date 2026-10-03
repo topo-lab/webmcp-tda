@@ -112,9 +112,10 @@ describe('Running and cancelling', () => {
     cy.get('#run-simplicial').click();
     ready();
     cy.window().its('scrollY').should('be.greaterThan', 300);
+    // Clear of the 62px sticky header, with the scroll margin of the pane as its gap.
     cy.get('.result-pane').should(($pane) => {
       const { top } = $pane[0]!.getBoundingClientRect();
-      expect(top).to.be.lessThan(200);
+      expect(top).to.be.within(70, 100);
     });
   });
 });

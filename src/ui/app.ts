@@ -825,6 +825,9 @@ export function mountApp(root: HTMLElement): () => void {
     updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error), activity: 'Computation failed.' });
   };
 
+  /** Set when the person starts a run; on small screens the result is brought into view once it exists. */
+  let revealOnResult = false;
+
   const revealResult = () => {
     if (!window.matchMedia('(max-width: 1120px)').matches) return;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -834,6 +837,7 @@ export function mountApp(root: HTMLElement): () => void {
   simplicialPanel.addEventListener('submit', (event) => {
     event.preventDefault();
     if (getWorkspaceState().status === 'computing') return;
+    revealOnResult = true;
     try {
       const points = parsePointInput(pointsInput.value);
       const request = validateSimplicialRequest({
@@ -847,13 +851,12 @@ export function mountApp(root: HTMLElement): () => void {
     } catch (error) {
       updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error), activity: 'Check the point coordinates and filtration settings.' });
     }
-    revealResult();
   });
 
   cubicalPanel.addEventListener('submit', (event) => {
     event.preventDefault();
     if (getWorkspaceState().status === 'computing') return;
-    revealResult();
+    revealOnResult = true;
     void tdaRuntime.computeCubical({
       kind: 'cubical',
       source: 'current',
@@ -931,6 +934,11 @@ export function mountApp(root: HTMLElement): () => void {
     }
     imageMeta.textContent = `${state.currentImage.name} · ${state.currentImage.width} × ${state.currentImage.height}`;
     updateResult(state.latestResult);
+    if (state.status !== 'computing') {
+      // Scrolling at click time targets the layout before the result exists; wait until it is final.
+      if (revealOnResult && state.status !== 'idle') requestAnimationFrame(revealResult);
+      revealOnResult = false;
+    }
   });
 
   renderParameters('rips');
