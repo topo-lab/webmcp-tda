@@ -16,7 +16,9 @@ describe('agent view of a result', () => {
     });
     const view = toAgentResult(result, { shownInWorkspace: true });
     expect(view).toMatchObject({ ok: true, kind: 'simplicial', components: 1, loops: 2, voids: null, units: 'distance', pairsReturned: 3 });
-    expect(view.longLived).toBe('essential, or lifetime >= 0.2 (10% of the filtration range)');
+    expect(view.longLived).toBe('essential, or lifetime >= 0.2 (20% of the longest-lived class of dimension >= 1)');
+    const alone = toAgentResult(simplicialResult({ persistence: summary({ persistenceThreshold: 0 }) }), { shownInWorkspace: true });
+    expect(alone.longLived).toBe('essential only (no class of dimension >= 1 to compare with)');
     expect(view.elapsedMs).toBe(2.3);
   });
 

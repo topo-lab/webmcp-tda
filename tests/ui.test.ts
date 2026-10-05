@@ -88,7 +88,7 @@ describe('human point input', () => {
     });
     expect(resultDescription(rips)).toBe(
       'Vietoris–Rips on 3 2D points found 1 connected component, 2 long-lived loops (H₁). '
-      + 'Long-lived means the class never dies or lives at least 0.2 (10% of the filtration range). Raise maxEdgeLength to see them merge.',
+      + 'Long-lived means the class never dies, or lives at least 0.2 (20% as long as the longest-lived class of dimension 1 or higher). Raise maxEdgeLength to see them merge.',
     );
     const sphere = simplicialResult({
       input: { ...simplicialResult().input, dimension: 3 },
@@ -98,6 +98,8 @@ describe('human point input', () => {
     expect(resultDescription(sphere)).toMatch(/1 connected component, 0 long-lived loops \(H₁\), 1 long-lived void \(H₂\)\./);
     const edgesOnly = simplicialResult({ interpretation: { reliableThroughDimension: 0, warnings: [] } });
     expect(resultDescription(edgesOnly)).not.toMatch(/loop/);
+    const nothingToCompare = simplicialResult({ persistence: summary({ persistenceThreshold: 0 }) });
+    expect(resultDescription(nothingToCompare)).toMatch(/Long-lived means the class never dies\.$/);
   });
 
   it('describes an image result with its segmentation and counts', () => {

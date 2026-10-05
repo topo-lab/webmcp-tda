@@ -132,10 +132,7 @@ async function computeSimplicial(request: SimplicialRequest): Promise<Simplicial
   });
 
   const reliable = reliableThroughDimension(request.complex, maxDimension, dimension);
-  const summary = summarizePersistence(persistence, MAX_RESULT_LIMIT, {
-    reliableThroughDimension: reliable,
-    filtrationRange: maxFiltration - minFiltration,
-  });
+  const summary = summarizePersistence(persistence, MAX_RESULT_LIMIT, { reliableThroughDimension: reliable, filtrationEnd: maxFiltration });
   return {
     kind: 'simplicial',
     complex: request.complex,
@@ -241,7 +238,7 @@ async function computeCubical(request: CubicalRequest, currentImage?: ScalarImag
       filtration,
       downsample,
     },
-    persistence: summarizePersistence(persistence, MAX_RESULT_LIMIT, { filtrationRange: maximum - minimum }),
+    persistence: summarizePersistence(persistence, MAX_RESULT_LIMIT, { filtrationEnd: maximum }),
     elapsedMs: performance.now() - startedAt,
   };
 }

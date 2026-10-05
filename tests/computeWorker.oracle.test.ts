@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ComputeRequest, ComputeResult, ScalarImage, WorkerRequestMessage, WorkerResponseMessage } from '../src/tda/types';
+import { pointSample } from '../src/tda/samples';
 import { canonicalIntervals, ripsOracle, vertexGridOracle, type Interval } from './helpers/persistenceOracle';
 
 // Only the Worker transport is replaced. This imports the production handler
@@ -171,6 +172,18 @@ describe('worker simplicial geometry and persistence', () => {
         // A full-range complex always has top-dimension artifacts; they are left out, and that is only news when the caller capped the depth.
         expect(Object.keys(result.persistence.excludedPairs)).toEqual(['2']);
         expect(result.interpretation.warnings).toEqual([]);
+      }
+    }
+  });
+
+  it('counts the loops of each built-in planar example the same way under Rips, Alpha and Čech', async () => {
+    // The alpha complex of the figure-eight has a filtration range of 5.2 (hull triangles) while its loops live 0.185.
+    const expectedLoops = { circle: 1, 'figure-eight': 2, clusters: 2 } as const;
+    for (const [sample, loops] of Object.entries(expectedLoops) as Array<[keyof typeof expectedLoops, number]>) {
+      for (const [complex, parameters] of [['rips', { maxEdgeLength: 0.7 }], ['alpha', {}], ['cech', { maxRadius: 0.5 }]] as const) {
+        const result = await compute({ kind: 'simplicial', complex, points: pointSample(sample), parameters: { ...parameters, maxSimplexDimension: 2 } });
+        if (result.kind !== 'simplicial') throw new Error('wrong result kind');
+        expect(result.persistence.persistentByDimension[1], `${sample} ${complex}`).toBe(loops);
       }
     }
   });

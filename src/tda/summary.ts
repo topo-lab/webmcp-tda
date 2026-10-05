@@ -1,14 +1,22 @@
 import type { PersistencePair, PersistenceResult, Simplex } from 'tda-wasm';
 import type { PersistenceSummary, SerializablePair } from './types';
 
-/** A class is long-lived when it never dies or lives at least this fraction of the filtration range. */
-export const PERSISTENCE_FRACTION = 0.1;
+/**
+ * A class is long-lived when it never dies, or lives at least this fraction as long as the longest-lived class of
+ * dimension 1 or higher. The yardstick is a feature of the data. The extent of the filtration is not one: an alpha
+ * complex of a figure-eight has a range of 5.2 because of large triangles on its hull, while its two loops live 0.185.
+ */
+export const PERSISTENCE_FRACTION = 0.2;
 
 export interface SummaryOptions {
   /** Highest homology dimension to report. Pairs above it are counted in `excludedPairs` only. */
   reliableThroughDimension?: number;
-  /** Extent of the filtration, the base of the long-lived threshold. Defaults to the extent of the reported pairs. */
-  filtrationRange?: number;
+  /**
+   * Where the filtration stops. A class that is still alive there counts up to that point when it serves as the
+   * yardstick, so noise is measured against a dominant loop and not against itself. Defaults to the latest birth
+   * or death among the reported pairs.
+   */
+  filtrationEnd?: number;
 }
 
 function pairId(pair: PersistencePair): string {
@@ -41,14 +49,19 @@ function serializePair(pair: PersistencePair, id: string): SerializablePair {
   };
 }
 
-function extentOf(pairs: readonly PersistencePair[]): number {
-  let low = 0;
-  let high = 0;
+/** Lifetime of the longest-lived class of dimension 1 or higher, cut off at `end`; 0 when there is none. */
+function longestLifetime(pairs: readonly PersistencePair[], end: number): number {
+  let longest = 0;
   for (const pair of pairs) {
-    low = Math.min(low, pair.birth);
-    high = Math.max(high, pair.birth, Number.isFinite(pair.death) ? pair.death : pair.birth);
+    if (pair.dimension >= 1) longest = Math.max(longest, (Number.isFinite(pair.death) ? pair.death : end) - pair.birth);
   }
-  return high - low;
+  return longest;
+}
+
+function latestValue(pairs: readonly PersistencePair[]): number {
+  let latest = 0;
+  for (const pair of pairs) latest = Math.max(latest, pair.birth, Number.isFinite(pair.death) ? pair.death : pair.birth);
+  return latest;
 }
 
 function increment(counts: Record<number, number>, dimension: number): void {
@@ -69,7 +82,8 @@ export function summarizePersistence(
     else increment(excludedPairs, pair.dimension);
   }
 
-  const persistenceThreshold = PERSISTENCE_FRACTION * (options.filtrationRange ?? extentOf(kept));
+  // With nothing of dimension 1 or higher to measure against, only the classes that never die are long-lived.
+  const persistenceThreshold = PERSISTENCE_FRACTION * longestLifetime(kept, options.filtrationEnd ?? latestValue(kept));
   const pairsByDimension: Record<number, number> = {};
   const essentialByDimension: Record<number, number> = {};
   const persistentByDimension: Record<number, number> = {};
@@ -81,7 +95,7 @@ export function summarizePersistence(
       increment(essentialByDimension, pair.dimension);
       essentialCount += 1;
     }
-    if (essential || pair.death - pair.birth >= persistenceThreshold) increment(persistentByDimension, pair.dimension);
+    if (essential || (persistenceThreshold > 0 && pair.death - pair.birth >= persistenceThreshold)) increment(persistentByDimension, pair.dimension);
   }
 
   const strongest = [...kept].sort((left, right) => {

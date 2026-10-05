@@ -99,7 +99,9 @@ export function toAgentResult(
     components: persistence.essentialByDimension[0] ?? 0,
     loops: reliable >= 1 ? persistence.persistentByDimension[1] ?? 0 : null,
     voids: threeDimensional && reliable >= 2 ? persistence.persistentByDimension[2] ?? 0 : null,
-    longLived: `essential, or lifetime >= ${formatScale(persistence.persistenceThreshold)} (${PERSISTENCE_FRACTION * 100}% of the filtration range)`,
+    longLived: persistence.persistenceThreshold > 0
+      ? `essential, or lifetime >= ${formatScale(persistence.persistenceThreshold)} (${PERSISTENCE_FRACTION * 100}% of the longest-lived class of dimension >= 1)`
+      : 'essential only (no class of dimension >= 1 to compare with)',
     pairsByDimension: persistence.pairsByDimension,
     pairsTotal: persistence.pairCount,
     pairsReturned: Math.min(limit, persistence.strongestPairs.length),

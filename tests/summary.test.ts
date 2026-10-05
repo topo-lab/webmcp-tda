@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { summarizePersistence } from '../src/tda/summary';
+import { PERSISTENCE_FRACTION, summarizePersistence } from '../src/tda/summary';
 
 describe('persistence summaries', () => {
   it('assigns stable unique IDs to repeated equal pairs', () => {
@@ -76,19 +76,48 @@ describe('persistence summaries', () => {
     expect(result.strongestPairs.every((p) => p.dimension <= 1)).toBe(true);
   });
 
-  it('counts a class as long-lived when it never dies or lives at least a tenth of the range', () => {
+  it('counts a class as long-lived when it never dies or lives at least a fifth as long as the longest one', () => {
     const pairs = [
       { dimension: 1, birth: 0.1, death: 0.9 },
       { dimension: 1, birth: 0.2, death: 0.25 },
-      { dimension: 1, birth: 0.3, death: 0.4 },
+      { dimension: 1, birth: 0.3, death: 0.5 },
       { dimension: 1, birth: 0.3, death: Infinity },
     ];
-    const explicit = summarizePersistence({ pairs, dimension: 1, pairsByDimension: { 1: 4 }, essentialCount: 1 }, 10, { filtrationRange: 1 });
-    expect(explicit.persistenceThreshold).toBeCloseTo(0.1, 12);
-    expect(explicit.persistentByDimension).toEqual({ 1: 3 });
-    // Without a range the extent of the reported pairs is used (here 0.9, because the essential class has no death).
-    const derived = summarizePersistence({ pairs, dimension: 1, pairsByDimension: { 1: 4 }, essentialCount: 1 }, 10);
-    expect(derived.persistenceThreshold).toBeCloseTo(0.09, 12);
-    expect(summarizePersistence({ pairs: [], dimension: 0, pairsByDimension: {}, essentialCount: 0 }, 10)).toMatchObject({ pairCount: 0, persistenceThreshold: 0, persistentByDimension: {} });
+    // The class that never dies counts up to the end (1.0), so the longest is 0.8 and the threshold 0.16.
+    const result = summarizePersistence({ pairs, dimension: 1, pairsByDimension: { 1: 4 }, essentialCount: 1 }, 10, { filtrationEnd: 1 });
+    expect(result.persistenceThreshold).toBeCloseTo(0.16, 12);
+    expect(result.persistentByDimension).toEqual({ 1: 3 });
+    expect(PERSISTENCE_FRACTION).toBe(0.2);
+  });
+
+  it('measures noise against a dominant loop, not against itself, by cutting an alive class off at the end', () => {
+    const pairs = [
+      { dimension: 1, birth: 0.2, death: Infinity },
+      { dimension: 1, birth: 0.3, death: 0.4 },
+      { dimension: 1, birth: 0.3, death: 0.32 },
+    ];
+    const withEnd = summarizePersistence({ pairs, dimension: 1, pairsByDimension: { 1: 3 }, essentialCount: 1 }, 10, { filtrationEnd: 1 });
+    expect(withEnd.persistenceThreshold).toBeCloseTo(0.16, 12);
+    expect(withEnd.persistentByDimension).toEqual({ 1: 1 });
+    // Without an end the latest value among the pairs (0.4) stands in, which makes the noise look larger.
+    const derived = summarizePersistence({ pairs, dimension: 1, pairsByDimension: { 1: 3 }, essentialCount: 1 }, 10);
+    expect(derived.persistenceThreshold).toBeCloseTo(0.04, 12);
+    expect(derived.persistentByDimension).toEqual({ 1: 2 });
+  });
+
+  it('is not misled by large late triangles: the range of an alpha complex of a figure-eight is 5.2, its loops live 0.185', () => {
+    const loops = [{ dimension: 1, birth: 0.05, death: 0.235 }, { dimension: 1, birth: 0.06, death: 0.245 }];
+    const noise = [{ dimension: 1, birth: 0.1, death: 0.103 }, { dimension: 1, birth: 0.1, death: 0.103 }, { dimension: 1, birth: 5.229, death: 5.229 }];
+    const result = summarizePersistence({ pairs: [...loops, ...noise], dimension: 1, pairsByDimension: { 1: 5 }, essentialCount: 0 }, 10, { filtrationEnd: 5.229 });
+    expect(result.persistenceThreshold).toBeCloseTo(0.037, 12);
+    expect(result.persistentByDimension).toEqual({ 1: 2 });
+  });
+
+  it('counts only the classes that never die when there is nothing of dimension 1 or higher to compare with', () => {
+    const pairs = [{ dimension: 0, birth: 0, death: Infinity }, { dimension: 0, birth: 0, death: 1 }];
+    expect(summarizePersistence({ pairs, dimension: 0, pairsByDimension: { 0: 2 }, essentialCount: 1 }, 10))
+      .toMatchObject({ persistenceThreshold: 0, persistentByDimension: { 0: 1 } });
+    expect(summarizePersistence({ pairs: [], dimension: 0, pairsByDimension: {}, essentialCount: 0 }, 10))
+      .toMatchObject({ pairCount: 0, persistenceThreshold: 0, persistentByDimension: {} });
   });
 });
