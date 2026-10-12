@@ -66,6 +66,7 @@ export const CAPABILITIES = {
   results: {
     reliableDimensions: 'H0 and H1 for 2D clouds, H0 to H2 for 3D clouds; classes above that are truncation artifacts and are counted as excluded, not returned',
     longLived: 'a class is long-lived when it survives to the computed end, or lives at least 20% as long as the longest-lived class of dimension 1 or higher; an infinite death may reflect a filtration limit',
+    roundOff: 'simplicial pairs no longer than 1e-12 of the largest filtration value are floating-point round-off and are left out',
     errors: 'failures are returned as {ok:false, error:{code, message, field, hint}} instead of being thrown',
   },
   simplicialComplexes: COMPLEX_CAPABILITIES,

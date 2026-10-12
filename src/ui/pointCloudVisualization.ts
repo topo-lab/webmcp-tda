@@ -86,7 +86,7 @@ const RotatablePointCloud3D = lazy(async () => {
         },
         convention: complex,
         complexType: complex,
-        maxSimplexDimension,
+        maxSimplexDim: maxSimplexDimension,
         simplices: scene.simplices,
         rawPairs: [],
       });

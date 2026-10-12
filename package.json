@@ -17,12 +17,12 @@
     "vendor:tda-viz-react": "node scripts/vendor-tda-viz-react.mjs"
   },
   "dependencies": {
+    "@topolab/tda-wasm": "file:vendor/tda-wasm",
     "playcanvas": "^2.21.4",
     "plotly.js-basic-dist-min": "^4.0.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "tda-viz-react": "file:vendor/tda-viz-react-0.1.0.tgz",
-    "tda-wasm": "file:vendor/tda-wasm"
+    "tda-viz-react": "file:vendor/tda-viz-react/tda-viz-react-0.1.0.tgz"
   },
   "devDependencies": {
     "@types/plotly.js": "^3.0.13",

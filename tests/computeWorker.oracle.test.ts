@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ComputeRequest, ComputeResult, ScalarImage, WorkerRequestMessage, WorkerResponseMessage } from '../src/tda/types';
 import { pointSample } from '../src/tda/samples';
+import { ROUND_OFF_FRACTION } from '../src/tda/summary';
+import { toAgentResult } from '../src/webmcp/agentView';
 import { canonicalIntervals, ripsOracle, vertexGridOracle, type Interval } from './helpers/persistenceOracle';
 
 // Only the Worker transport is replaced. This imports the production handler
@@ -184,6 +186,42 @@ describe('worker simplicial geometry and persistence', () => {
         const result = await compute({ kind: 'simplicial', complex, points: pointSample(sample), parameters: { ...parameters, maxSimplexDimension: 2 } });
         if (result.kind !== 'simplicial') throw new Error('wrong result kind');
         expect(result.persistence.persistentByDimension[1], `${sample} ${complex}`).toBe(loops);
+      }
+    }
+  });
+
+  it('keeps the components, loops and voids the 0.2 engine gave every built-in example, and no round-off pairs', async () => {
+    // [components, loops, voids] of the agent view, recorded with the 0.2 engine (commit 3f2f89c) before the 0.3 migration.
+    const expected = {
+      circle: { rips: { default: [1, 1, null], ui: [1, 1, null] }, alpha: { default: [1, 1, null], ui: [1, 1, null] }, cech: { default: [1, 1, null], ui: [1, 1, null] } },
+      'figure-eight': { rips: { default: [1, 2, null], ui: [1, 2, null] }, alpha: { default: [1, 2, null], ui: [1, 2, null] }, cech: { default: [1, 2, null], ui: [1, 2, null] } },
+      clusters: { rips: { default: [1, 2, null], ui: [2, 2, null] }, alpha: { default: [1, 2, null], ui: [1, 2, null] }, cech: { default: [1, 2, null], ui: [2, 2, null] } },
+      sphere: { rips: { default: [1, 14, 1], ui: [1, 12, null] }, alpha: { default: [1, 0, 1], ui: [1, 20, null] }, cech: { default: [1, 12, 1], ui: [1, 22, null] } },
+    } as const;
+    const ui = { rips: { maxEdgeLength: 0.7, maxSimplexDimension: 2 }, alpha: { maxSimplexDimension: 2 }, cech: { maxRadius: 0.5, maxSimplexDimension: 2 } };
+    for (const [sample, complexes] of Object.entries(expected) as Array<[keyof typeof expected, (typeof expected)[keyof typeof expected]]>) {
+      for (const complex of ['rips', 'alpha', 'cech'] as const) {
+        for (const mode of ['default', 'ui'] as const) {
+          const result = await compute({ kind: 'simplicial', complex, points: pointSample(sample), ...(mode === 'ui' ? { parameters: ui[complex] } : {}) });
+          if (result.kind !== 'simplicial') throw new Error('wrong result kind');
+          const view = toAgentResult(result, { shownInWorkspace: true });
+          expect([view.components, view.loops, view.voids], `${sample} ${complex} ${mode}`).toEqual(complexes[complex][mode]);
+          const floor = ROUND_OFF_FRACTION * result.visualization.maxFiltration;
+          expect(result.persistence.strongestPairs.filter((pair) => pair.lifetime !== 'infinity' && pair.lifetime <= floor), `${sample} ${complex} ${mode}`).toEqual([]);
+        }
+      }
+    }
+  });
+
+  it('lowers a Čech face that rounds one ulp above its coface, so a symmetric cloud computes', async () => {
+    // Without the lowering, 0.3's persistence() refuses this complex: [0, 1, 20] comes out one ulp below its face [1, 20].
+    const result = await compute({ kind: 'simplicial', complex: 'cech', points: pointSample('figure-eight'), parameters: { maxRadius: 0.5, maxSimplexDimension: 2 } });
+    if (result.kind !== 'simplicial') throw new Error('wrong result kind');
+    const value = new Map(result.visualization.simplices.map((simplex) => [simplex.vertices.join(','), simplex.filtration]));
+    for (const simplex of result.visualization.simplices) {
+      for (const omitted of simplex.vertices.keys()) {
+        if (simplex.vertices.length < 2) continue;
+        expect(value.get(simplex.vertices.filter((_, at) => at !== omitted).join(','))!).toBeLessThanOrEqual(simplex.filtration);
       }
     }
   });

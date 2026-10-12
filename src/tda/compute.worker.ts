@@ -1,10 +1,19 @@
 /// <reference lib="webworker" />
 
-import { GudhiPersistentCohomology, type AlphaComplexResult } from 'tda-wasm';
+import {
+  alphaComplex,
+  cechComplex,
+  cubicalPersistence,
+  load,
+  persistence,
+  ripsComplex,
+  type Complex,
+  type PointCloud,
+} from '@topolab/tda-wasm';
 import { binarizeImage, closeBinaryImage, gaussianBlurImage } from './imageProcessing';
 import { interpretationWarnings, reliableThroughDimension, type ResolvedParameters } from './interpretation';
 import { pointCloudScale, type PointCloudScale } from './scale';
-import { summarizeComplex, summarizePersistence } from './summary';
+import { complexSimplices, diagramPairs, ROUND_OFF_FRACTION, summarizeComplex, summarizePersistence } from './summary';
 import type {
   ComplexKind,
   ComplexParameters,
@@ -25,24 +34,18 @@ import {
 
 const workerScope = self as DedicatedWorkerGlobalScope;
 const MAX_VISUALIZATION_SIMPLICES = 20_000;
-let enginePromise: Promise<GudhiPersistentCohomology> | null = null;
 
-function getEngine(): Promise<GudhiPersistentCohomology> {
-  if (!enginePromise) {
-    enginePromise = (async () => {
-      const engine = new GudhiPersistentCohomology();
-      await engine.initialize();
-      return engine;
-    })().catch((error: unknown) => {
-      enginePromise = null;
-      throw error;
-    });
-  }
-  return enginePromise;
+/** `load()` is idempotent and forgets a failed attempt, so every computation can simply await it. */
+function loadEngine(): Promise<void> {
+  return load();
 }
 
-function flat(points: number[][]): number[] {
-  return points.flatMap((point) => point);
+function pointCloud(points: number[][], d = points[0]!.length): PointCloud {
+  const coords = new Float64Array(points.length * d);
+  points.forEach((point, index) => {
+    for (let axis = 0; axis < d; axis += 1) coords[index * d + axis] = point[axis] ?? 0;
+  });
+  return { coords, d };
 }
 
 /** Limits the caller leaves out default to the diameter of the cloud, so no scale cuts the filtration off. */
@@ -69,55 +72,96 @@ function reportedParameters(kind: ComplexKind, parameters: ResolvedParameters): 
   }
 }
 
-function capAlphaSimplices(complex: AlphaComplexResult, maximumDimension: number): AlphaComplexResult {
-  const simplices = complex.simplices.filter((simplex) => simplex.vertices.length - 1 <= maximumDimension);
-  const dimensionCounts: Record<number, number> = {};
-  simplices.forEach((simplex) => {
-    const dimension = simplex.vertices.length - 1;
-    dimensionCounts[dimension] = (dimensionCounts[dimension] ?? 0) + 1;
-  });
-  return { ...complex, simplices, dimension: maximumDimension, dimensionCounts };
+/** The faces of `complex` up to `maximumDimension`; the order is kept, so the result is still a filtration. */
+function capComplex(complex: Complex, maximumDimension: number): Complex {
+  const vertices: number[] = [];
+  const offsets = [0];
+  const filtrations: number[] = [];
+  for (let index = 0; index < complex.filtrations.length; index += 1) {
+    const start = complex.offsets[index]!;
+    const end = complex.offsets[index + 1]!;
+    if (end - start - 1 > maximumDimension) continue;
+    for (let at = start; at < end; at += 1) vertices.push(complex.vertices[at]!);
+    offsets.push(vertices.length);
+    filtrations.push(complex.filtrations[index]!);
+  }
+  return {
+    vertices: Int32Array.from(vertices),
+    offsets: Uint32Array.from(offsets),
+    filtrations: Float64Array.from(filtrations),
+    scale: complex.scale,
+  };
+}
+
+/**
+ * Lowers every face to the smallest value among its cofaces. A triangle and its longest edge can share one smallest
+ * enclosing ball whose radius rounds one ulp apart when computed from different points; 0.3's `persistence()`
+ * refuses such a complex, and 0.2 applied this same lowering. See tda-wasm WASM_HONESTY.md, "Čech: filtration
+ * monotonicity". Values move by a few ulps at most.
+ */
+function lowerFacesToCofaces(complex: Complex): Complex {
+  const filtrations = Float64Array.from(complex.filtrations);
+  const index = new Map<string, number>();
+  const byDimension: number[][] = [];
+  const verticesOf = (simplex: number) => Array.from(complex.vertices.subarray(complex.offsets[simplex]!, complex.offsets[simplex + 1]!));
+  for (let simplex = 0; simplex < filtrations.length; simplex += 1) {
+    const vertices = verticesOf(simplex);
+    index.set(vertices.join(','), simplex);
+    (byDimension[vertices.length - 1] ??= []).push(simplex);
+  }
+  for (let dimension = byDimension.length - 1; dimension >= 1; dimension -= 1) {
+    for (const simplex of byDimension[dimension] ?? []) {
+      const vertices = verticesOf(simplex);
+      for (let omitted = 0; omitted < vertices.length; omitted += 1) {
+        const face = index.get(vertices.filter((_, at) => at !== omitted).join(','))!;
+        if (filtrations[face]! > filtrations[simplex]!) filtrations[face] = filtrations[simplex]!;
+      }
+    }
+  }
+  return { ...complex, filtrations };
+}
+
+/**
+ * Pairs no longer than this are floating-point round-off, not features: alpha complexes of cospherical points
+ * (the sphere example) leave bars of 1e-18 to 3e-14. Relative to the largest value, so it holds at any scale.
+ */
+function roundOffFloor(complex: Complex): number {
+  let largest = 0;
+  for (const value of complex.filtrations) if (Number.isFinite(value)) largest = Math.max(largest, Math.abs(value));
+  return ROUND_OFF_FRACTION * largest;
+}
+
+function buildComplex(request: SimplicialRequest, parameters: ResolvedParameters): Complex {
+  const maxSimplexDim = parameters.maxSimplexDimension;
+  switch (request.complex) {
+    case 'rips':
+      return ripsComplex(pointCloud(request.points), { maxEdgeLength: parameters.maxEdgeLength, maxSimplexDim });
+    case 'alpha':
+      // The alpha complex is built in 3D; a planar cloud lies in the plane z = 0, as it did with the 0.2 engine.
+      return capComplex(alphaComplex(pointCloud(request.points, 3)), maxSimplexDim);
+    case 'cech':
+      return lowerFacesToCofaces(cechComplex(pointCloud(request.points), { maxRadius: parameters.maxRadius, maxSimplexDim }));
+  }
 }
 
 async function computeSimplicial(request: SimplicialRequest): Promise<SimplicialResult> {
   validateSimplicialRequest(request);
   const startedAt = performance.now();
-  const engine = await getEngine();
-  const points = flat(request.points);
+  await loadEngine();
   const dimension = request.points[0]!.length;
   const scale = pointCloudScale(request.points);
   const parameters = resolveParameters(request, scale);
   const maxDimension = parameters.maxSimplexDimension;
-  let complex: AlphaComplexResult;
-
-  switch (request.complex) {
-    case 'rips':
-      complex = engine.computeRipsComplex(points, dimension, parameters.maxEdgeLength, maxDimension);
-      break;
-    case 'alpha': {
-      const weightedPoints = request.points.map((point) => ({
-        x: point[0]!,
-        y: point[1]!,
-        z: dimension === 3 ? point[2]! : 0,
-        weight: 0,
-      }));
-      complex = capAlphaSimplices(engine.computeWeightedAlphaComplex(weightedPoints), maxDimension);
-      break;
-    }
-    case 'cech':
-      complex = engine.computeCechComplex(points, dimension, parameters.maxRadius, maxDimension);
-      break;
-  }
+  const complex = buildComplex(request, parameters);
+  const allSimplices = complexSimplices(complex);
 
   const coefficientField = request.coefficientField ?? 2;
-  const persistence = engine.computePersistence(complex.simplices, coefficientField);
-  const visualizableSimplices = complex.simplices.filter((simplex) =>
+  const pairs = diagramPairs(persistence(complex, { coeff: coefficientField, minPersistence: roundOffFloor(complex) }));
+  const visualizableSimplices = allSimplices.filter((simplex) =>
     simplex.vertices.every((vertex) => vertex >= 0 && vertex < request.points.length),
   );
   const canAnimate = visualizableSimplices.length <= MAX_VISUALIZATION_SIMPLICES;
-  const simplices = canAnimate
-    ? visualizableSimplices.map((simplex) => ({ vertices: [...simplex.vertices], filtration: simplex.filtration }))
-    : [];
+  const simplices = canAnimate ? visualizableSimplices : [];
   const allEdges = visualizableSimplices.filter((simplex) => simplex.vertices.length === 2);
   const edges = canAnimate ? allEdges.map((simplex) => ({
     vertices: [simplex.vertices[0]!, simplex.vertices[1]!] as [number, number],
@@ -125,14 +169,14 @@ async function computeSimplicial(request: SimplicialRequest): Promise<Simplicial
   })) : [];
   let minFiltration = 0;
   let maxFiltration = 1e-9;
-  complex.simplices.forEach((simplex) => {
-    if (!Number.isFinite(simplex.filtration)) return;
-    minFiltration = Math.min(minFiltration, simplex.filtration);
-    maxFiltration = Math.max(maxFiltration, simplex.filtration);
+  complex.filtrations.forEach((filtration) => {
+    if (!Number.isFinite(filtration)) return;
+    minFiltration = Math.min(minFiltration, filtration);
+    maxFiltration = Math.max(maxFiltration, filtration);
   });
 
   const reliable = reliableThroughDimension(request.complex, maxDimension, dimension);
-  const summary = summarizePersistence(persistence, MAX_RESULT_LIMIT, { reliableThroughDimension: reliable, filtrationEnd: maxFiltration });
+  const summary = summarizePersistence(pairs, MAX_RESULT_LIMIT, { reliableThroughDimension: reliable, filtrationEnd: maxFiltration });
   return {
     kind: 'simplicial',
     complex: request.complex,
@@ -144,7 +188,7 @@ async function computeSimplicial(request: SimplicialRequest): Promise<Simplicial
       defaulted: parameters.defaulted,
       scale: { diameter: scale.diameter, connectingDistance: scale.connectingDistance },
     },
-    complexSummary: summarizeComplex(complex.simplices),
+    complexSummary: summarizeComplex(allSimplices),
     visualization: {
       supported: canAnimate,
       reason: canAnimate
@@ -209,7 +253,7 @@ function valueRange(values: readonly number[]): { minimum: number; maximum: numb
 async function computeCubical(request: CubicalRequest, currentImage?: ScalarImage) {
   validateCubicalRequest(request);
   const startedAt = performance.now();
-  const engine = await getEngine();
+  await loadEngine();
   const downsample = request.downsample ?? 1;
   const sourceImage = resolveImage(request, currentImage);
   const shouldBinarize = request.binarize ?? true;
@@ -225,7 +269,8 @@ async function computeCubical(request: CubicalRequest, currentImage?: ScalarImag
   if (filtration === 'superlevel') {
     values = values.map((value) => minimum + maximum - value);
   }
-  const persistence = engine.computeCubicalPersistenceFromVertices2D(values, image.width, image.height);
+  // Construction 'V' values the vertices (pixels) and gives each edge and square the largest value of its corners.
+  const pairs = diagramPairs(cubicalPersistence({ values: Float64Array.from(values), shape: [image.height, image.width] }, { construction: 'V' }));
   return {
     kind: 'cubical' as const,
     input: {
@@ -238,7 +283,7 @@ async function computeCubical(request: CubicalRequest, currentImage?: ScalarImag
       filtration,
       downsample,
     },
-    persistence: summarizePersistence(persistence, MAX_RESULT_LIMIT, { filtrationEnd: maximum }),
+    persistence: summarizePersistence(pairs, MAX_RESULT_LIMIT, { filtrationEnd: maximum }),
     elapsedMs: performance.now() - startedAt,
   };
 }

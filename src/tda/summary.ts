@@ -1,5 +1,5 @@
-import type { PersistencePair, PersistenceResult, Simplex } from 'tda-wasm';
-import type { PersistenceSummary, SerializablePair } from './types';
+import type { Complex, Diagram } from '@topolab/tda-wasm';
+import type { FiltrationSimplex, PersistencePair, PersistenceSummary, SerializablePair } from './types';
 
 /**
  * A class is long-lived when it survives to the computed end, or lives at least this fraction as long as the longest-lived class of
@@ -7,6 +7,13 @@ import type { PersistenceSummary, SerializablePair } from './types';
  * complex of a figure-eight has a range of 5.2 because of large triangles on its hull, while its two loops live 0.185.
  */
 export const PERSISTENCE_FRACTION = 0.2;
+
+/**
+ * Simplicial diagrams leave out the pairs no longer than this fraction of the complex's largest finite value
+ * (`minPersistence`): they are floating-point round-off. It cannot change a long-lived count, whose threshold is
+ * a fifth of a real class's lifetime; it keeps such bars out of the pair counts.
+ */
+export const ROUND_OFF_FRACTION = 1e-12;
 
 export interface SummaryOptions {
   /** Highest homology dimension to report. Pairs above it are counted in `excludedPairs` only. */
@@ -68,16 +75,38 @@ function increment(counts: Record<number, number>, dimension: number): void {
   counts[dimension] = (counts[dimension] ?? 0) + 1;
 }
 
+/**
+ * The pairs of a diagram, one per interval, dimension by dimension. `+ 0` turns the `-0` an alpha vertex is born at
+ * (minus its zero weight) into 0, so ids and JSON read the same as for the other complexes.
+ */
+export function diagramPairs(diagram: Pick<Diagram, 'pairs'>): PersistencePair[] {
+  const pairs: PersistencePair[] = [];
+  diagram.pairs.forEach((flat, dimension) => {
+    for (let index = 0; index + 1 < flat.length; index += 2) {
+      pairs.push({ dimension, birth: flat[index]! + 0, death: flat[index + 1]! + 0 });
+    }
+  });
+  return pairs;
+}
+
+/** The simplices of a complex as vertex lists (increasing, as 0.3 lists them) with their filtration values. */
+export function complexSimplices(complex: Pick<Complex, 'vertices' | 'offsets' | 'filtrations'>): FiltrationSimplex[] {
+  return Array.from(complex.filtrations, (filtration, index) => ({
+    vertices: Array.from(complex.vertices.subarray(complex.offsets[index]!, complex.offsets[index + 1]!)),
+    filtration: filtration + 0,
+  }));
+}
+
 export function summarizePersistence(
-  result: PersistenceResult,
+  pairs: readonly PersistencePair[],
   limit: number,
   options: SummaryOptions = {},
 ): PersistenceSummary {
-  result.pairs.forEach(assertSerializablePair);
+  pairs.forEach(assertSerializablePair);
   const reliable = options.reliableThroughDimension ?? Number.POSITIVE_INFINITY;
   const kept: PersistencePair[] = [];
   const excludedPairs: Record<number, number> = {};
-  for (const pair of result.pairs) {
+  for (const pair of pairs) {
     if (pair.dimension <= reliable) kept.push(pair);
     else increment(excludedPairs, pair.dimension);
   }
@@ -123,7 +152,7 @@ export function summarizePersistence(
   };
 }
 
-export function summarizeComplex(simplices: Simplex[]) {
+export function summarizeComplex(simplices: readonly Pick<FiltrationSimplex, 'vertices'>[]) {
   const simplexCountsByDimension: Record<number, number> = {};
   let maxDimension = 0;
   for (const simplex of simplices) {

@@ -13,7 +13,7 @@ export default defineConfig({
     format: 'es',
   },
   optimizeDeps: {
-    exclude: ['tda-wasm'],
+    exclude: ['@topolab/tda-wasm'],
   },
   build: {
     sourcemap: true,

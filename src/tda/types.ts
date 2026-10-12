@@ -46,6 +46,13 @@ export interface CubicalRequest {
   resultLimit?: number;
 }
 
+/** One interval of a diagram; `death` is `Infinity` for a class alive at the computed end. */
+export interface PersistencePair {
+  dimension: number;
+  birth: number;
+  death: number;
+}
+
 export interface SerializablePair {
   id: string;
   dimension: number;

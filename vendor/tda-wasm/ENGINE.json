@@ -1,0 +1,108 @@
+{
+  "package": "@topolab/tda-wasm",
+  "version": "0.3.0",
+  "repository": "https://github.com/topo-lab/tda-wasm",
+  "commit": "be2d4bc8c67f5b1f28ab340d65380a0783ecbec9",
+  "build": {
+    "date": "2026-10-12T15:27:38Z",
+    "build_mode": "release",
+    "cxx_standard": "c++20",
+    "emscripten": "4.0.15",
+    "rust": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "sources": "src/ (C++, incl. src/geom) + third_party/geogram_delaunay + rust/ (tda-core via tda-core-c); no GUDHI, Boost, Eigen or CGAL header"
+  },
+  "files": {
+    "LICENSE": {
+      "bytes": 1064,
+      "sha256": "ec70f20306af2cea3598a4dbc72aaaa6a3453b75f5c2e0a18eb1cdf28a1eb143"
+    },
+    "THIRD_PARTY_LICENSES.md": {
+      "bytes": 39196,
+      "sha256": "cbaa7f81352fb7c12b7114133a3c7acecbefb3c72ee5b8765d8da3daf75ae7ab"
+    },
+    "dist/check.d.ts": {
+      "bytes": 4610,
+      "sha256": "65c4756ccb75d49eb0bc5ea192ad682ed0d17a428d571182e8e1bbdb1cf25c44"
+    },
+    "dist/check.js": {
+      "bytes": 8081,
+      "sha256": "e8ccef840afe5a2680d1419c1142a826f1a93469d829fd9a0b6228dfd4ac1b19"
+    },
+    "dist/complex.d.ts": {
+      "bytes": 25539,
+      "sha256": "ac9043c2d72cf391c8136418f1ba280e33910f589917768d8dc2b4629bb45104"
+    },
+    "dist/complex.js": {
+      "bytes": 31722,
+      "sha256": "8cf95d53813adad5a818c1578b00d39616657de7469aa5b29eaf1232c3a59028"
+    },
+    "dist/diagram.d.ts": {
+      "bytes": 5023,
+      "sha256": "7b987cd4a15b0c50c2b18e18116385b0e9fb43d4f52f091e1b543095e9e18a6b"
+    },
+    "dist/diagram.js": {
+      "bytes": 10419,
+      "sha256": "fe11e2743d3f439e3f9f24fde2b73c70d7bb1233c81d1f5e1ede78e1030c1278"
+    },
+    "dist/diagram_of.js": {
+      "bytes": 3508,
+      "sha256": "42b7683b883e37fdc1ddecd2a38ef3ccf5ced3bb0ae6d4ada66d528a3ce25808"
+    },
+    "dist/flat.d.ts": {
+      "bytes": 2767,
+      "sha256": "ef766f3746199293e28379b5918ac05a97f993efa6479d2f1f6cc297b98bd179"
+    },
+    "dist/flat.js": {
+      "bytes": 6484,
+      "sha256": "1049698112b22ac59af2477337795e90d3eed79f818f9556f2fd750ee89937fa"
+    },
+    "dist/index.d.ts": {
+      "bytes": 3396,
+      "sha256": "33296afd2ae976e2dee747bea27eaede98a6438a8e6726f8e300a127b5af7c59"
+    },
+    "dist/index.js": {
+      "bytes": 1904,
+      "sha256": "d7d725ade42a0aadae48d49714989ec16058655c8062938381e0cf4d1ae8ef37"
+    },
+    "dist/load.d.ts": {
+      "bytes": 1766,
+      "sha256": "ccaa5f0a76203786ff14e6595405b4ec86a238ee49de25d1a99629e519081d85"
+    },
+    "dist/load.js": {
+      "bytes": 5320,
+      "sha256": "b77114e804cff5ddfb153ebabebd6a98526cb8ad79d800bb357dda7c6598b0ad"
+    },
+    "dist/persistence.d.ts": {
+      "bytes": 16400,
+      "sha256": "39d043783a7de18691e9a6c811a25dc03377713c98e79d92473965b115f21647"
+    },
+    "dist/persistence.js": {
+      "bytes": 19492,
+      "sha256": "c10f6272b4a018e3f5a2573961c9376621ea6ad647e140550bcb3efe58294d3f"
+    },
+    "dist/source.d.ts": {
+      "bytes": 1051,
+      "sha256": "8e6a718644bbc0bab671d6459820c30dc335a63ed6e8564378e00a515ba6ddf0"
+    },
+    "dist/source.js": {
+      "bytes": 2025,
+      "sha256": "b4707f11102a3d6c7c2f3a11111bfebd7b510dd4caa2cba7992438981bdff80f"
+    },
+    "dist/tda.mjs": {
+      "bytes": 106727,
+      "sha256": "4226a4cebf763150992286c3dceae8a6265612f0260885f1d6ebf771ce30077c"
+    },
+    "dist/tda.wasm": {
+      "bytes": 1591627,
+      "sha256": "06abef9902767b85def9f941b031daaeb3fad9e98ce6f3aa1abdd6bcb260d6eb"
+    },
+    "dist/types.d.ts": {
+      "bytes": 6548,
+      "sha256": "ef4b714cde240f9897e6f22a6e41df0d9f7fa194bd465e79dd32d98e04b76bdd"
+    },
+    "third_party/geogram_delaunay/LICENSE": {
+      "bytes": 1518,
+      "sha256": "5071ceca467d28e6fefb5f0dba4066abfd03d8b8b5b3af968d0aa7754c5e3f9c"
+    }
+  }
+}
