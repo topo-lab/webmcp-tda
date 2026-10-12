@@ -40,7 +40,7 @@ npm install
 npm run dev
 ```
 
-The repository vendors the browser runtime for [`tda-wasm`](https://github.com/topo-lab/tda-wasm) and a source-containing package archive built from [`tda-viz-react`](https://github.com/topo-lab/tda-viz-react), so a standalone clone has everything required to install and run.
+The repository vendors the browser runtime of [`@topolab/tda-wasm`](https://github.com/topo-lab/tda-wasm) 0.3 and a source-containing package archive built from [`tda-viz-react`](https://github.com/topo-lab/tda-viz-react), so a standalone clone has everything required to install and run (see [Computational backend](#computational-backend)).
 
 Open `http://127.0.0.1:5180`. A standard browser gets the complete visual workbench; a WebMCP-enabled browser also discovers the four tools above.
 
@@ -75,6 +75,10 @@ The application has no backend, account data, or remote computation. Inputs and 
 
 ## Computational backend
 
-The repository vendors the built browser distribution of [`tda-wasm`](https://github.com/topo-lab/tda-wasm), an MIT-licensed WebAssembly toolkit. Its license and third-party notices are retained under `vendor/tda-wasm/`. Vite fingerprints and serves the WASM asset from the production bundle.
+The repository vendors the root of [`@topolab/tda-wasm`](https://github.com/topo-lab/tda-wasm) 0.3, an MIT-licensed WebAssembly toolkit that includes Geogram's Delaunay code (BSD-3-Clause), under `vendor/tda-wasm/`, and a package archive of [`tda-viz-react`](https://github.com/topo-lab/tda-viz-react) built against it under `vendor/tda-viz-react/`. Their licences and third-party notices are kept there and served by the site under `/licenses/`; the page footer links to them and credits the bundled photographs. Vite fingerprints and serves the WASM asset from the production bundle.
+
+`vendor/tda-wasm/ENGINE.json` and `vendor/tda-viz-react/BUILD.json` name the commit each was built from and the size and SHA-256 of every vendored file, and a unit test checks both. To refresh them, build clean checkouts and run `npm run vendor:tda-wasm -- <tda-wasm checkout>` and `npm run vendor:tda-viz-react -- <tda-viz-react checkout>`. The scripts refuse a checkout with uncommitted changes, an engine that is not a 0.3 release build, a library not built against 0.3, and any file that contains a local path such as `/Users/…`.
+
+Two details of the 0.3 engine are handled in the worker. The full Čech complex can give a face a value one ulp above a coface where two computations of the same enclosing ball round apart; 0.3 refuses such a complex, so the worker lowers each face to its smallest coface's value, as the 0.2 engine did. Simplicial diagrams are computed with `minPersistence` set to 1e-12 of the complex's largest finite value, which leaves out floating-point round-off bars (the alpha complex of the sphere example had 13 such H2 bars, lifetimes below 3e-14). This cannot change a long-lived count, whose threshold is a fifth of a real class's lifetime, so the long-lived rule itself does not use `minPersistence`; it keeps those bars out of `pairsByDimension` and `pairsTotal`. Every built-in example keeps the components, loops and voids it had with the 0.2 engine (`tests/computeWorker.oracle.test.ts`).
 
 The WebMCP API is an evolving Community Group draft. See the [current specification](https://webmachinelearning.github.io/webmcp/).
