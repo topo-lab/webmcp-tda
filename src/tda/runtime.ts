@@ -1,6 +1,6 @@
 import { getWorkspaceState, PLACEHOLDER_IMAGE_NAME, updateWorkspace } from '../state';
 import { isAbortError, ToolInputError } from './errors';
-import { loadImageSample } from './imageSources';
+import { loadImageSample, type LoadedImage } from './imageSources';
 import { computeClient } from './computeClient';
 import type { ComputeResult, CubicalRequest, ScalarImage, SimplicialRequest } from './types';
 import { validateCubicalRequest, validateSimplicialRequest } from './validation';
@@ -60,19 +60,17 @@ export class TdaRuntime {
   async computeCubical(request: CubicalRequest, options: RunOptions = {}): Promise<ComputeOutcome> {
     validateCubicalRequest(request);
     if ((request.source ?? 'current') === 'sample') {
-      updateWorkspace({ activity: `Loading the ${request.sample} photo…`, error: null });
-      const loaded = await loadImageSample(request.sample!, options.signal);
-      updateWorkspace({ currentImage: loaded.image, currentImageRgba: loaded.rgba });
+      return this.run(request, options, (signal) => loadImageSample(request.sample!, signal));
     } else if (request.source === 'values') {
-      updateWorkspace({
-        currentImage: {
+      return this.run(request, options, () => ({
+        image: {
           name: 'agent-values',
           width: request.width!,
           height: request.height!,
           values: [...request.values!],
         },
-        currentImageRgba: null,
-      });
+        rgba: null,
+      }));
     } else if (getWorkspaceState().currentImage.name === PLACEHOLDER_IMAGE_NAME) {
       throw new ToolInputError('invalid_input', 'The workbench image is still loading.', {
         field: 'source',
@@ -104,7 +102,11 @@ export class TdaRuntime {
     }
   }
 
-  private async run(request: SimplicialRequest | CubicalRequest, { origin = 'human', signal }: RunOptions): Promise<ComputeOutcome> {
+  private async run(
+    request: SimplicialRequest | CubicalRequest,
+    { origin = 'human', signal }: RunOptions,
+    prepareImage?: (signal: AbortSignal) => LoadedImage | { image: ScalarImage; rgba: null } | Promise<LoadedImage>,
+  ): Promise<ComputeOutcome> {
     // The newest request owns the workbench, so a person's older run can never be shown.
     this.abortJobs((job) => job.origin === 'human', 'A newer computation replaced this one.');
     const generation = ++this.generation;
@@ -122,7 +124,16 @@ export class TdaRuntime {
       latestResult: null,
     });
     try {
-      const result = await this.backend.run(request, getWorkspaceState().currentImage, job.controller.signal);
+      let image = getWorkspaceState().currentImage;
+      if (job.controller.signal.aborted) throw job.controller.signal.reason;
+      if (prepareImage) {
+        const loaded = await prepareImage(job.controller.signal);
+        if (job.controller.signal.aborted) throw job.controller.signal.reason;
+        image = loaded.image;
+        // Image preparation is part of the job: an older download must not replace a newer input or result.
+        if (generation === this.generation) updateWorkspace({ currentImage: image, currentImageRgba: loaded.rgba });
+      }
+      const result = await this.backend.run(request, image, job.controller.signal);
       const shownInWorkspace = generation === this.generation;
       if (shownInWorkspace) {
         updateWorkspace({ status: 'ready', activity: `${result.kind} persistence ready.`, latestResult: result });

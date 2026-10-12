@@ -532,6 +532,7 @@ export function mountApp(root: HTMLElement): () => void {
   };
 
   let imageLoadGeneration = 0;
+  let imageLoading = false;
   const setImage = (image: ScalarImage, label: string | null, rgba?: Uint8ClampedArray) => {
     automaticThreshold = true;
     invalidateImageResult();
@@ -546,14 +547,27 @@ export function mountApp(root: HTMLElement): () => void {
   /** The preload of the default image is silent: the person is looking at the point-cloud tab. */
   const loadSelectedImageSample = async (id: ImageSampleId, { quiet = false }: { quiet?: boolean } = {}) => {
     const generation = ++imageLoadGeneration;
+    imageLoading = true;
     const sample = IMAGE_SAMPLES[id];
     const imageWhenStarted = getWorkspaceState().currentImage;
     invalidateImageResult();
-    if (!quiet) updateWorkspace({ activity: `Loading the ${sample.label.toLowerCase()} example…`, error: null });
-    const loaded = await loadImageSample(id);
-    // A preload nobody asked for must not replace an image the person or an agent set while it was loading.
-    const replacedMeanwhile = quiet && getWorkspaceState().currentImage !== imageWhenStarted;
-    if (generation === imageLoadGeneration && !replacedMeanwhile) setImage(loaded.image, quiet ? null : sample.label.toLowerCase(), loaded.rgba);
+    updateWorkspace(quiet ? {} : { activity: `Loading the ${sample.label.toLowerCase()} example…`, error: null });
+    try {
+      const loaded = await loadImageSample(id);
+      // A preload nobody asked for must not replace an image the person or an agent set while it was loading.
+      const replacedMeanwhile = quiet && getWorkspaceState().currentImage !== imageWhenStarted;
+      if (generation === imageLoadGeneration && !replacedMeanwhile) setImage(loaded.image, quiet ? null : sample.label.toLowerCase(), loaded.rgba);
+    } catch (error) {
+      if (generation === imageLoadGeneration) {
+        imageSelect.value = Object.entries(IMAGE_SAMPLES).find(([, entry]) => entry.name === getWorkspaceState().currentImage.name)?.[0] ?? 'custom';
+        updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) });
+      }
+    } finally {
+      if (generation === imageLoadGeneration) {
+        imageLoading = false;
+        updateWorkspace({});
+      }
+    }
   };
 
   const renderParameters = (kind: ComplexKind) => {
@@ -784,8 +798,7 @@ export function mountApp(root: HTMLElement): () => void {
 
   imageSelect.addEventListener('change', () => {
     if (imageSelect.value === 'custom') return;
-    void loadSelectedImageSample(imageSelect.value as ImageSampleId)
-      .catch((error: unknown) => updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) }));
+    void loadSelectedImageSample(imageSelect.value as ImageSampleId);
   });
 
   imageFile.addEventListener('change', () => {
@@ -793,11 +806,20 @@ export function mountApp(root: HTMLElement): () => void {
     if (!file) return;
     invalidateImageResult();
     const generation = ++imageLoadGeneration;
+    imageLoading = true;
+    updateWorkspace({ activity: `Loading ${file.name}…`, error: null });
     void loadImageSource(file, file.name).then((loaded) => {
       if (generation !== imageLoadGeneration) return;
       imageSelect.value = 'custom';
       setImage(loaded.image, file.name, loaded.rgba);
-    }).catch((error: unknown) => updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) }));
+    }).catch((error: unknown) => {
+      if (generation === imageLoadGeneration) updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) });
+    }).finally(() => {
+      if (generation === imageLoadGeneration) {
+        imageLoading = false;
+        updateWorkspace({});
+      }
+    });
   });
 
   binarize.addEventListener('change', () => {
@@ -857,7 +879,7 @@ export function mountApp(root: HTMLElement): () => void {
 
   cubicalPanel.addEventListener('submit', (event) => {
     event.preventDefault();
-    if (getWorkspaceState().status === 'computing') return;
+    if (getWorkspaceState().status === 'computing' || imageLoading) return;
     revealOnResult = true;
     void tdaRuntime.computeCubical({
       kind: 'cubical',
@@ -904,6 +926,11 @@ export function mountApp(root: HTMLElement): () => void {
         setPoints(simplicial.points);
         pointSampleSelect.value = identifyPointSample(simplicial.points);
       } else if (request.kind === 'cubical') {
+        // A new agent request supersedes any older image selection still decoding in the human UI.
+        if (imageLoading) {
+          ++imageLoadGeneration;
+          imageLoading = false;
+        }
         const cubical = state.latestRequest as CubicalRequest;
         setMode('cubical');
         binarize.checked = cubical.binarize ?? true;
@@ -926,15 +953,15 @@ export function mountApp(root: HTMLElement): () => void {
     const activeKind = (state.latestRequest as { kind?: string } | null)?.kind;
     const busy = state.status === 'computing';
     runSimplicial.setAttribute('aria-disabled', String(busy));
-    runCubical.setAttribute('aria-disabled', String(busy));
+    runCubical.setAttribute('aria-disabled', String(busy || imageLoading));
     cancelButtons.forEach((button) => { button.hidden = !busy; });
     runSimplicial.textContent = state.status === 'computing' && activeKind === 'simplicial' ? 'Computing…' : 'Compute simplicial persistence';
-    runCubical.textContent = state.status === 'computing' && activeKind === 'cubical' ? 'Computing…' : 'Compute cubical persistence';
+    runCubical.textContent = state.status === 'computing' && activeKind === 'cubical' ? 'Computing…' : imageLoading ? 'Loading image…' : 'Compute cubical persistence';
     if (state.currentImage !== previewedImage) {
       previewedImage = state.currentImage;
       syncImagePreview(state.currentImage);
     }
-    imageMeta.textContent = `${state.currentImage.name} · ${state.currentImage.width} × ${state.currentImage.height}`;
+    imageMeta.textContent = imageLoading ? 'Loading selected image…' : `${state.currentImage.name} · ${state.currentImage.width} × ${state.currentImage.height}`;
     updateResult(state.latestResult);
     if (state.status !== 'computing') {
       // Scrolling at click time targets the layout before the result exists; wait until it is final.
@@ -946,7 +973,7 @@ export function mountApp(root: HTMLElement): () => void {
   renderParameters('rips');
   setPoints(currentPoints);
   syncImagePreview(getWorkspaceState().currentImage);
-  void loadSelectedImageSample('donut', { quiet: true }).catch((error: unknown) => updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) }));
+  void loadSelectedImageSample('donut', { quiet: true });
 
   return () => {
     stopFiltrationAnimation();

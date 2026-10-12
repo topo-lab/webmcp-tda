@@ -6,6 +6,32 @@ function ready() {
 }
 
 describe('Workbench input and recovery journeys', () => {
+  it('waits for the selected photo before enabling Compute and ignores an older failed image load', () => {
+    cy.visit('/');
+    cy.get('#image-meta').should('contain', 'chocolate-doughnut');
+    cy.get('#cubical-tab').click();
+    cy.intercept('GET', '**/samples/glasses.jpg', (request) => request.on('response', (response) => response.setDelay(1500)));
+    cy.get('#image-sample').select('glasses');
+    cy.get('#run-cubical').should('have.attr', 'aria-disabled', 'true').and('contain', 'Loading image').click();
+    cy.get('#compute-status').should('not.have.attr', 'data-status', 'computing');
+    cy.get('#image-meta').should('contain', 'eyeglasses');
+    cy.get('#run-cubical').should('have.attr', 'aria-disabled', 'false').click();
+    ready();
+    cy.get('#result-description').should('contain', 'eyeglasses');
+
+    cy.intercept('GET', '**/samples/donut.jpg', { statusCode: 503, delay: 1000 });
+    cy.get('#image-sample').select('donut');
+    cy.get('#image-sample').select('pretzel');
+    cy.get('#image-meta').should('contain', 'soft-pretzel');
+    cy.get('#run-cubical').click();
+    ready();
+    cy.get('#result-description').should('contain', 'soft-pretzel');
+    // The older failure arrives after the newer computation and must not replace its visible status.
+    cy.wait(1100);
+    ready();
+    cy.get('#image-sample').should('have.value', 'pretzel');
+  });
+
   it('uses one keyboard tab stop and supports arrow, Home, and End navigation', () => {
     cy.visit('/');
     cy.get('[role="tab"][tabindex="0"]').should('have.length', 1);

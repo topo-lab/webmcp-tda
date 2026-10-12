@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getWorkspaceState, PLACEHOLDER_IMAGE_NAME, updateWorkspace } from '../src/state';
 import { ToolInputError } from '../src/tda/errors';
+import { loadImageSample, type LoadedImage } from '../src/tda/imageSources';
 import { TdaRuntime, type ComputeBackend } from '../src/tda/runtime';
 import type { ComputeResult, CubicalRequest, SimplicialRequest } from '../src/tda/types';
 import { cubicalResult, simplicialResult } from './helpers/fixtures';
@@ -173,5 +174,42 @@ describe('image inputs', () => {
       status: 'ready',
       currentImage: { name: 'agent-values', width: 2, height: 2 },
     });
+  });
+
+  it('reserves workspace ownership before loading a sample and computes each caller with its own image', async () => {
+    let finishLoad!: (image: LoadedImage) => void;
+    vi.mocked(loadImageSample).mockImplementationOnce(() => new Promise((resolve) => { finishLoad = resolve; }));
+    const { backend, calls } = openBackend();
+    const run = vi.spyOn(backend, 'run');
+    const runtime = new TdaRuntime(backend);
+    const older = runtime.computeCubical({ kind: 'cubical', source: 'sample', sample: 'donut' }, { origin: 'agent' });
+    const newer = runtime.computeCubical({ kind: 'cubical', source: 'values', width: 2, height: 2, values: [1, 2, 3, 4] }, { origin: 'agent' });
+    await Promise.resolve();
+    const newerResult = cubicalResult({ input: { ...cubicalResult().input, name: 'newer-grid' } });
+    calls[0]!.resolve(newerResult);
+    await newer;
+
+    finishLoad({ image: { name: 'older-photo', width: 2, height: 2, values: [4, 3, 2, 1] }, rgba: new Uint8ClampedArray(16) });
+    await Promise.resolve();
+    await Promise.resolve();
+    const olderResult = cubicalResult({ input: { ...cubicalResult().input, name: 'older-photo' } });
+    calls[1]!.resolve(olderResult);
+    await expect(older).resolves.toEqual({ result: olderResult, shownInWorkspace: false });
+    expect(run).toHaveBeenLastCalledWith(expect.objectContaining({ sample: 'donut' }), expect.objectContaining({ name: 'older-photo' }), expect.any(AbortSignal));
+    expect(getWorkspaceState()).toMatchObject({ latestResult: newerResult, currentImage: { name: 'agent-values', values: [1, 2, 3, 4] } });
+  });
+
+  it('cancels a sample request during its image load and does not start the worker after cancellation', async () => {
+    let finishLoad!: (image: LoadedImage) => void;
+    vi.mocked(loadImageSample).mockImplementationOnce(() => new Promise((resolve) => { finishLoad = resolve; }));
+    const run = vi.fn(async () => cubicalResult());
+    const runtime = new TdaRuntime({ run });
+    const pending = runtime.computeCubical({ kind: 'cubical', source: 'sample', sample: 'donut' });
+    pending.catch(() => undefined);
+    runtime.cancel();
+    finishLoad({ image: { name: 'cancelled-photo', width: 2, height: 2, values: [0, 1, 1, 0] }, rgba: new Uint8ClampedArray(16) });
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(run).not.toHaveBeenCalled();
+    expect(getWorkspaceState()).toMatchObject({ status: 'idle', activity: 'Computation cancelled.', currentImage: { name: 'test-image' } });
   });
 });
