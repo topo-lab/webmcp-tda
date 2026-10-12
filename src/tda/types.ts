@@ -61,7 +61,7 @@ export interface PersistenceSummary {
   /** Classes that are still alive at the end of the filtration. */
   essentialCount: number;
   essentialByDimension: Record<number, number>;
-  /** Per dimension: pairs that never die or live at least `persistenceThreshold`. */
+  /** Per dimension: pairs still alive at the computed end or that live at least `persistenceThreshold`. */
   persistentByDimension: Record<number, number>;
   persistenceThreshold: number;
   /** Pairs left out per dimension because the complex was capped below that dimension. */

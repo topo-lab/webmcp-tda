@@ -193,8 +193,8 @@ export function resultDescription(result: ComputeResult): string {
     found.push(`${plural(persistence.persistentByDimension[2] ?? 0, 'long-lived void')} (H₂)`);
   }
   const longLived = persistence.persistenceThreshold > 0
-    ? `Long-lived means the class never dies, or lives at least ${formatScale(persistence.persistenceThreshold)} (${PERSISTENCE_FRACTION * 100}% as long as the longest-lived class of dimension 1 or higher).`
-    : 'Long-lived means the class never dies.';
+    ? `Long-lived means the class survives to the computed end, or lives at least ${formatScale(persistence.persistenceThreshold)} (${PERSISTENCE_FRACTION * 100}% as long as the longest-lived class of dimension 1 or higher).`
+    : 'Long-lived means the class survives to the computed end.';
   if (result.kind === 'simplicial') {
     const base = `${COMPLEX_LABELS[result.complex]} on ${result.input.pointCount} ${result.input.dimension}D points found ${found.join(', ')}. ${longLived}`;
     return [base, ...result.interpretation.warnings].join(' ');
@@ -308,8 +308,8 @@ export function mountApp(root: HTMLElement): () => void {
             <p id="activity" class="activity" role="status" aria-live="polite" aria-atomic="true">Choose an example and run a computation.</p>
             <div class="metric-grid" aria-label="Result metrics">
               <div title="Connected components left at the end of the filtration (essential H₀ classes)."><span>Components</span><strong id="metric-components">—</strong></div>
-              <div title="H₁ classes that never die, or live at least 20% as long as the longest-lived class of dimension 1 or higher."><span>Loops</span><strong id="metric-loops">—</strong></div>
-              <div title="H₂ classes of a 3D cloud that never die, or live at least 20% as long as the longest-lived class of dimension 1 or higher."><span>Voids</span><strong id="metric-voids">—</strong></div>
+              <div title="H₁ classes that survive to the computed end, or live at least 20% as long as the longest-lived class of dimension 1 or higher."><span>Loops</span><strong id="metric-loops">—</strong></div>
+              <div title="H₂ classes of a 3D cloud that survive to the computed end, or live at least 20% as long as the longest-lived class of dimension 1 or higher."><span>Voids</span><strong id="metric-voids">—</strong></div>
               <div><span>Runtime</span><strong id="metric-runtime">—</strong></div>
             </div>
             <figure class="diagram-card"><figcaption><span>Persistence diagram</span><span class="diagram-legend"><i class="h0"></i>H₀ <i class="h1"></i>H₁ <i class="h2"></i>H₂</span></figcaption><div id="diagram" role="group" aria-label="Interactive persistence diagram"></div><p id="diagram-note" class="diagram-note">Run a computation to see its pairs.</p></figure>

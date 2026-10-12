@@ -2,7 +2,7 @@ import type { PersistencePair, PersistenceResult, Simplex } from 'tda-wasm';
 import type { PersistenceSummary, SerializablePair } from './types';
 
 /**
- * A class is long-lived when it never dies, or lives at least this fraction as long as the longest-lived class of
+ * A class is long-lived when it survives to the computed end, or lives at least this fraction as long as the longest-lived class of
  * dimension 1 or higher. The yardstick is a feature of the data. The extent of the filtration is not one: an alpha
  * complex of a figure-eight has a range of 5.2 because of large triangles on its hull, while its two loops live 0.185.
  */
@@ -82,7 +82,7 @@ export function summarizePersistence(
     else increment(excludedPairs, pair.dimension);
   }
 
-  // With nothing of dimension 1 or higher to measure against, only the classes that never die are long-lived.
+  // With nothing of dimension 1 or higher to measure against, only the classes alive at the computed end are long-lived.
   const persistenceThreshold = PERSISTENCE_FRACTION * longestLifetime(kept, options.filtrationEnd ?? latestValue(kept));
   const pairsByDimension: Record<number, number> = {};
   const essentialByDimension: Record<number, number> = {};

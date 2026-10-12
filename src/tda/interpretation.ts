@@ -47,5 +47,15 @@ export function interpretationWarnings(args: {
       `At ${name} ${formatScale(limit)} the complex still has ${components} connected components; the points connect at ${formatScale(connectsAt)}. Raise ${name} to see them merge.`,
     );
   }
+  if (kind !== 'alpha') {
+    const unresolved = Object.entries(persistence.essentialByDimension).filter(([dimension, count]) => Number(dimension) > 0 && count > 0);
+    if (unresolved.length > 0) {
+      const total = unresolved.reduce((sum, [, count]) => sum + count, 0);
+      const dimensions = unresolved.map(([dimension]) => `H${dimension}`).join('/');
+      const name = kind === 'rips' ? 'maxEdgeLength' : 'maxRadius';
+      const limit = kind === 'rips' ? parameters.maxEdgeLength : parameters.maxRadius;
+      warnings.push(`${total} ${dimensions} ${total === 1 ? 'class is' : 'classes are'} still alive at ${name} ${formatScale(limit)}. An infinite death means beyond the computed range; ${total === 1 ? 'it may' : 'they may'} die if the limit is increased.`);
+    }
+  }
   return warnings;
 }

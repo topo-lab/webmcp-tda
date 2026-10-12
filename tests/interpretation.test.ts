@@ -39,6 +39,15 @@ describe('interpretation warnings', () => {
       .toEqual(['At maxRadius 1 the complex still has 3 connected components; the points connect at 2. Raise maxRadius to see them merge.']);
     expect(interpretationWarnings({ ...base, kind: 'alpha', persistence: disconnected })).toEqual([]);
   });
+
+  it('does not describe unresolved higher-dimensional classes as immortal', () => {
+    const unresolved = summary({ essentialByDimension: { 0: 1, 1: 1 } });
+    expect(interpretationWarnings({ ...base, kind: 'rips', persistence: unresolved }))
+      .toEqual(['1 H1 class is still alive at maxEdgeLength 2. An infinite death means beyond the computed range; it may die if the limit is increased.']);
+    expect(interpretationWarnings({ ...base, kind: 'cech', persistence: summary({ essentialByDimension: { 0: 1, 1: 2, 2: 1 } }) }))
+      .toEqual(['3 H1/H2 classes are still alive at maxRadius 1. An infinite death means beyond the computed range; they may die if the limit is increased.']);
+    expect(interpretationWarnings({ ...base, kind: 'alpha', persistence: unresolved })).toEqual([]);
+  });
 });
 
 describe('point cloud scale', () => {

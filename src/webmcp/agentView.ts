@@ -33,7 +33,7 @@ interface AgentResultCommon {
   pairsByDimension: Record<number, number>;
   pairsTotal: number;
   pairsReturned: number;
-  /** Strongest first. An H0 class that never merges has death "infinity". */
+  /** Strongest first. A class still alive at the computed end has death "infinity". */
   pairs: AgentPair[];
   warnings: string[];
   /** False when a newer request replaced this one in the visible workbench. */
@@ -100,8 +100,8 @@ export function toAgentResult(
     loops: reliable >= 1 ? persistence.persistentByDimension[1] ?? 0 : null,
     voids: threeDimensional && reliable >= 2 ? persistence.persistentByDimension[2] ?? 0 : null,
     longLived: persistence.persistenceThreshold > 0
-      ? `essential, or lifetime >= ${formatScale(persistence.persistenceThreshold)} (${PERSISTENCE_FRACTION * 100}% of the longest-lived class of dimension >= 1)`
-      : 'essential only (no class of dimension >= 1 to compare with)',
+      ? `alive at computed end, or lifetime >= ${formatScale(persistence.persistenceThreshold)} (${PERSISTENCE_FRACTION * 100}% of the longest-lived class of dimension >= 1)`
+      : 'alive at computed end only (no class of dimension >= 1 to compare with)',
     pairsByDimension: persistence.pairsByDimension,
     pairsTotal: persistence.pairCount,
     pairsReturned: Math.min(limit, persistence.strongestPairs.length),
