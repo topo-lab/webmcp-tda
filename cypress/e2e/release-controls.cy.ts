@@ -96,6 +96,30 @@ describe("Release controls — full workbench input matrix", () => {
     cy.get("#diagram .modebar-btn[data-title*='hare']").should("not.exist");
   });
 
+  it("credits the engine, the library and the photographs, and serves each licence it links to", () => {
+    cy.visit("/");
+    cy.get("#credits")
+      .should("contain", "@topolab/tda-wasm")
+      .and("contain", "Geogram")
+      .and("contain", "tda-viz-react")
+      .and("contain", "Willis Lam")
+      .and("contain", "CC BY-SA 2.0");
+    const expected: Record<string, string> = {
+      "licenses/tda-wasm/LICENSE.txt": "MIT License",
+      "licenses/tda-wasm/THIRD_PARTY_LICENSES.txt": "Geogram",
+      "licenses/geogram/LICENSE.txt": "Redistribution and use in source and binary forms",
+      "licenses/tda-viz-react/LICENSE.txt": "MIT License",
+    };
+    cy.get('#credits a[href^="licenses/"]').should("have.length", Object.keys(expected).length).each((link) => {
+      const href = link.attr("href")!;
+      expect(expected).to.have.property(href);
+      cy.request(href).then((response) => {
+        expect(response.status).to.equal(200);
+        expect(response.body).to.contain(expected[href]);
+      });
+    });
+  });
+
   it("computes both image filtrations, all resolutions, foregrounds, and threshold modes", () => {
     cy.visit("/");
     cy.get("#cubical-tab").click();

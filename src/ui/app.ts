@@ -330,7 +330,10 @@ export function mountApp(root: HTMLElement): () => void {
       </section>
     </main>
 
-    <footer><span>WebMCP Challenge 2026</span><span>Human-first · agent-ready · browser-local</span></footer>
+    <footer>
+      <span>WebMCP Challenge 2026</span><span>Human-first · agent-ready · browser-local</span>
+      <p id="credits" class="credits">Credits and licences: persistence is computed by @topolab/tda-wasm (MIT, <a href="licenses/tda-wasm/LICENSE.txt">licence</a>, <a href="licenses/tda-wasm/THIRD_PARTY_LICENSES.txt">third-party notices</a>), which includes Geogram's Delaunay code (BSD-3-Clause, <a href="licenses/geogram/LICENSE.txt">licence</a>); point clouds are drawn with tda-viz-react (MIT, <a href="licenses/tda-viz-react/LICENSE.txt">licence</a>). Pretzel photo by Willis Lam, <a href="https://creativecommons.org/licenses/by-sa/2.0/" rel="license noopener" target="_blank">CC BY-SA 2.0</a>; eyeglasses photo by Batholith, public domain; both via <a href="https://commons.wikimedia.org/" rel="noopener" target="_blank">Wikimedia Commons</a>.</p>
+    </footer>
   `;
 
   const modeTabs = [...document.querySelectorAll<HTMLButtonElement>('[data-mode]')];
