@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "cypress run"
+    "test:e2e": "cypress run",
+    "vendor:tda-wasm": "node scripts/vendor-tda-wasm.mjs",
+    "vendor:tda-viz-react": "node scripts/vendor-tda-viz-react.mjs"
   },
   "dependencies": {
     "playcanvas": "^2.21.4",
