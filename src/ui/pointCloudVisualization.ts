@@ -23,6 +23,8 @@ export interface PointCloudRenderOptions {
   interactionMode?: PointCloud2DInteractionMode;
   showAxes?: boolean;
   filtration3d?: PointCloud3DFiltration;
+  /** When false, the 3D cloud does not auto-rotate. Defaults to rotating. */
+  autoRotate?: boolean;
   onPointsChange?: (points: number[][]) => void;
 }
 
@@ -68,7 +70,15 @@ const RotatablePointCloud3D = lazy(async () => {
     import('playcanvas'),
   ]);
 
-  function AnimatedPointCloud3D({ points, config }: { points: number[][]; config?: PointCloud3DFiltration }) {
+  function AnimatedPointCloud3D({
+    points,
+    config,
+    autoRotate,
+  }: {
+    points: number[][];
+    config?: PointCloud3DFiltration;
+    autoRotate: boolean;
+  }) {
     const complex = config?.complex ?? 'rips';
     const simplices = config?.simplices ?? [];
     const scene = useMemo(
@@ -94,13 +104,16 @@ const RotatablePointCloud3D = lazy(async () => {
     const t = scene.scaleFiltrationValue(config?.value ?? 0);
 
     return createElement(
+      'div',
+      { className: 'point-cloud-3d-host', 'data-auto-rotate': autoRotate ? 'true' : 'false' },
+      createElement(
       PlayCanvasStage,
       {
         className: 'point-cloud-3d',
         cameraPosition: [0, 0.15, 3.1],
         clearColor: '#0b2531',
         enableControls: true,
-        autoRotate: true,
+        autoRotate,
         autoRotateSpeed: 0.34,
         // WebGPU currently reports invalid multisample textures when a hidden
         // workbench panel is resized in Chromium. WebGL2 is stable here and
@@ -133,6 +146,7 @@ const RotatablePointCloud3D = lazy(async () => {
         color: '#eefaff',
         size: 0.045,
       }),
+      ),
     );
   }
 
@@ -149,7 +163,11 @@ export function mountPointCloudVisualization(container: HTMLElement): PointCloud
         root.render(createElement(
           Suspense,
           { fallback: createElement('div', { className: 'point-cloud-loading' }, 'Preparing 3D view…') },
-          createElement(RotatablePointCloud3D, { points, config: options.filtration3d }),
+          createElement(RotatablePointCloud3D, {
+            points,
+            config: options.filtration3d,
+            autoRotate: options.autoRotate !== false,
+          }),
         ));
         return;
       }
