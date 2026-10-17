@@ -16,9 +16,12 @@ import type {
   CubicalRequest,
   ImageSampleId,
   ScalarImage,
+  SerializablePair,
   SimplicialResult,
 } from '../tda/types';
-import { renderPersistenceDiagram, unmountPersistenceDiagram } from './persistenceDiagram';
+import { bindBarcodeHover, renderBarcode, setBarcodeHighlight } from './barcode';
+import { createMotionController } from './motion';
+import { cancelPendingDiagramEmphasis, emphasizeDiagramPair, onPersistenceDiagramHover, renderPersistenceDiagram, unmountPersistenceDiagram } from './persistenceDiagram';
 import { mountPointCloudVisualization } from './pointCloudVisualization';
 
 export const WORKBENCH_COMPLEX_KINDS = [...COMPLEX_KINDS];
@@ -213,7 +216,10 @@ export function mountApp(root: HTMLElement): () => void {
         <a href="#workbench">Workbench</a>
         <a href="#agent-access">Agent access</a>
       </nav>
-      <span id="webmcp-status" class="status-pill" title="WebMCP registration status">WebMCP checking</span>
+      <div class="masthead-status">
+        <button id="pause-motion" class="motion-toggle" type="button" aria-pressed="false">Pause motion</button>
+        <span id="webmcp-status" class="status-pill" title="WebMCP registration status">WebMCP checking</span>
+      </div>
     </header>
 
     <main id="top">
@@ -313,6 +319,7 @@ export function mountApp(root: HTMLElement): () => void {
               <div><span>Runtime</span><strong id="metric-runtime">—</strong></div>
             </div>
             <figure class="diagram-card"><figcaption><span>Persistence diagram</span><span class="diagram-legend"><i class="h0"></i>H₀ <i class="h1"></i>H₁ <i class="h2"></i>H₂</span></figcaption><div id="diagram" role="group" aria-label="Interactive persistence diagram"></div><p id="diagram-note" class="diagram-note">Run a computation to see its pairs.</p></figure>
+            <figure class="diagram-card barcode-card"><figcaption><span>Persistence barcode</span><span class="diagram-legend"><i class="h0"></i>H₀ <i class="h1"></i>H₁ <i class="h2"></i>H₂</span></figcaption><div id="barcode" role="group" aria-label="Persistence barcode"></div><p id="barcode-note" class="diagram-note">Run a computation to see its intervals.</p></figure>
             <div class="interpretation"><strong>What this result says</strong><p id="result-description">Connected components, loops, and higher-dimensional features will appear here after computation.</p></div>
             <details class="raw-result"><summary>Inspect structured result</summary><button id="copy-result" class="secondary-action" type="button" disabled>Copy JSON</button><pre id="result-json">No result yet.</pre></details>
           </aside>
@@ -375,6 +382,9 @@ export function mountApp(root: HTMLElement): () => void {
   const maskPreview = element<HTMLCanvasElement>('#mask-preview');
   const imageMeta = element<HTMLElement>('#image-meta');
   const diagram = element<HTMLElement>('#diagram');
+  const barcode = element<HTMLElement>('#barcode');
+  const barcodeNote = element<HTMLElement>('#barcode-note');
+  const pauseMotion = element<HTMLButtonElement>('#pause-motion');
   const resultJson = element<HTMLPreElement>('#result-json');
   const copyResult = element<HTMLButtonElement>('#copy-result');
   const resultDescriptionElement = element<HTMLParagraphElement>('#result-description');
@@ -401,7 +411,23 @@ export function mountApp(root: HTMLElement): () => void {
   let filtrationFrame: number | null = null;
   let pointInteractionMode: 'move' | 'edit' = 'move';
   let showPointAxes = false;
+  let highlightedPairId: string | null = null;
+  let displayedPairs: SerializablePair[] = [];
   const pointVisualization = mountPointCloudVisualization(pointPreview);
+  const motion = createMotionController({
+    storage: localStorage,
+    reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)'),
+    root: document.documentElement,
+  });
+  pauseMotion.setAttribute('aria-pressed', String(motion.paused()));
+
+  const showIntervals = (pairs: SerializablePair[], playhead?: number) => {
+    displayedPairs = pairs;
+    if (highlightedPairId && !pairs.some((pair) => pair.id === highlightedPairId)) highlightedPairId = null;
+    renderPersistenceDiagram(diagram, pairs, { playhead });
+    renderBarcode(barcode, pairs, { playhead, highlightedId: highlightedPairId });
+    emphasizeDiagramPair(diagram, pairs, highlightedPairId);
+  };
 
   const setMode = (mode: 'simplicial' | 'cubical') => {
     modeTabs.forEach((tab) => {
@@ -416,7 +442,7 @@ export function mountApp(root: HTMLElement): () => void {
       filtrationRatio = 1;
       showFiltrationPlayhead = false;
       syncPointPreview();
-      renderPersistenceDiagram(diagram, activeSimplicialResult.persistence.strongestPairs);
+      showIntervals(activeSimplicialResult.persistence.strongestPairs);
     }
   };
 
@@ -469,6 +495,7 @@ export function mountApp(root: HTMLElement): () => void {
         value: currentT,
         showCover: showFiltrationPlayhead,
       } : undefined,
+      autoRotate: !motion.paused(),
       onPointsChange: dimension === 2 ? (nextPoints) => {
         stopFiltrationAnimation();
         activeSimplicialResult = null;
@@ -481,6 +508,7 @@ export function mountApp(root: HTMLElement): () => void {
     });
     pointMeta.textContent = `${currentPoints.length} points · ${dimension}D`;
     pointPreview.setAttribute('aria-label', `Interactive point cloud with ${currentPoints.length} points in ${dimension} dimensions`);
+    pointPreview.dataset.autoRotate = String(!motion.paused());
     pointTools.hidden = dimension !== 2;
     pointToolButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.pointTool === pointInteractionMode)));
     pointAxesButton.setAttribute('aria-pressed', String(showPointAxes));
@@ -623,11 +651,7 @@ export function mountApp(root: HTMLElement): () => void {
       ? 'Pause filtration'
       : filtrationRatio >= 1 ? 'Replay filtration' : 'Play filtration';
     syncPointPreview();
-    renderPersistenceDiagram(
-      diagram,
-      activeSimplicialResult.persistence.strongestPairs,
-      { playhead: withPlayhead ? t : undefined },
-    );
+    showIntervals(activeSimplicialResult.persistence.strongestPairs, withPlayhead ? t : undefined);
   };
 
   const resetFiltration = (message?: string) => {
@@ -660,10 +684,11 @@ export function mountApp(root: HTMLElement): () => void {
       metricVoids.textContent = '—';
       metricRuntime.textContent = '—';
       diagramNote.textContent = 'Run a computation to see its pairs.';
+      barcodeNote.textContent = 'Run a computation to see its intervals.';
       resultDescriptionElement.textContent = 'Connected components, loops, and higher-dimensional features will appear here after computation.';
       resultJson.textContent = '';
       copyResult.disabled = true;
-      renderPersistenceDiagram(diagram, []);
+      showIntervals([]);
       return;
     }
     const reliable = result.kind === 'simplicial' ? result.interpretation.reliableThroughDimension : Number.POSITIVE_INFINITY;
@@ -676,6 +701,7 @@ export function mountApp(root: HTMLElement): () => void {
     const hiddenPairs = Object.values(result.persistence.excludedPairs).reduce((sum, count) => sum + count, 0);
     diagramNote.textContent = `Showing ${result.persistence.returnedPairCount} of ${result.persistence.pairCount} pairs`
       + (hiddenPairs > 0 ? ` · ${hiddenPairs} truncation artifacts hidden` : '');
+    barcodeNote.textContent = 'Same intervals as the diagram.';
     resultDescriptionElement.textContent = resultDescription(result);
     resultJson.textContent = JSON.stringify(result, null, 2);
     copyResult.disabled = false;
@@ -695,14 +721,13 @@ export function mountApp(root: HTMLElement): () => void {
         : result.visualization.reason ?? 'Unavailable';
       toggleFiltration.textContent = 'Replay filtration';
       syncPointPreview();
-      renderPersistenceDiagram(
-        diagram,
+      showIntervals(
         result.persistence.strongestPairs,
-        { playhead: showFiltrationPlayhead ? currentFiltrationValue() : undefined },
+        showFiltrationPlayhead ? currentFiltrationValue() : undefined,
       );
     } else {
       resetFiltration();
-      renderPersistenceDiagram(diagram, result.persistence.strongestPairs);
+      showIntervals(result.persistence.strongestPairs);
     }
   };
 
@@ -973,6 +998,26 @@ export function mountApp(root: HTMLElement): () => void {
     }
   });
 
+  const barcodeKeepsHover = () => barcode.matches(':hover') || barcode.contains(document.activeElement);
+  onPersistenceDiagramHover(diagram, (id) => {
+    if (id === null && barcodeKeepsHover()) return;
+    if (id !== null) cancelPendingDiagramEmphasis(diagram);
+    highlightedPairId = id;
+    setBarcodeHighlight(barcode, id);
+  });
+  const unbindBarcodeHover = bindBarcodeHover(barcode, (id) => {
+    highlightedPairId = id;
+    setBarcodeHighlight(barcode, id);
+    emphasizeDiagramPair(diagram, displayedPairs, id);
+  });
+  const unsubscribeMotion = motion.subscribe((pausedNow) => {
+    pauseMotion.setAttribute('aria-pressed', String(pausedNow));
+    if (pausedNow && filtrationFrame !== null) stopFiltrationAnimation();
+    if (activeSimplicialResult?.visualization.supported) renderFiltrationPosition(showFiltrationPlayhead);
+    else syncPointPreview();
+  });
+  pauseMotion.addEventListener('click', () => motion.toggle());
+
   renderParameters('rips');
   setPoints(currentPoints);
   syncImagePreview(getWorkspaceState().currentImage);
@@ -980,6 +1025,9 @@ export function mountApp(root: HTMLElement): () => void {
 
   return () => {
     stopFiltrationAnimation();
+    unsubscribeMotion();
+    motion.destroy();
+    unbindBarcodeHover();
     unsubscribe();
     unmountPersistenceDiagram(diagram);
     pointVisualization.unmount();
