@@ -113,6 +113,11 @@ function metricValue(value: number): string {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(value);
 }
 
+/** A filtration value or radius: three significant digits, so t and √t stay consistent on screen. */
+function scaleValue(value: number): string {
+  return new Intl.NumberFormat('en-US', { maximumSignificantDigits: 3 }).format(value);
+}
+
 /** Radius of the geometric cover represented by the filtration parameter. */
 function coverDiskRadius(complex: ComplexKind, filtrationValue: number): number | null {
   const t = Math.max(0, filtrationValue);
@@ -657,8 +662,8 @@ export function mountApp(root: HTMLElement): () => void {
     const t = currentFiltrationValue();
     const diskRadius = coverDiskRadius(activeSimplicialResult.complex, t);
     filtrationValue.value = diskRadius === null
-      ? `t = ${metricValue(t)}`
-      : `t = ${metricValue(t)} · radius ${metricValue(diskRadius)}`;
+      ? `t = ${scaleValue(t)}`
+      : `t = ${scaleValue(t)} · radius ${scaleValue(diskRadius)}`;
     toggleFiltration.textContent = filtrationFrame !== null
       ? 'Pause filtration'
       : filtrationRatio >= 1 ? 'Replay filtration' : 'Play filtration';
