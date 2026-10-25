@@ -9,7 +9,7 @@ vi.mock('../src/state', () => ({
   updateWorkspace: mocks.updateWorkspace,
 }));
 
-import { registerWebMcpTools } from '../src/webmcp/register';
+import { keepWebMcpRegistered, registerWebMcpTools } from '../src/webmcp/register';
 
 const tools: WebMcpTool[] = [
   {
@@ -174,5 +174,104 @@ describe('WebMCP browser registration', () => {
 
     expect(clearTimeout).toHaveBeenCalledWith(17);
     expect(mocks.updateWorkspace).not.toHaveBeenCalled();
+  });
+});
+
+describe('registration across back/forward-cache navigation', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mocks.updateWorkspace.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  function fakePage() {
+    const listeners = new Map<string, Set<(event: PageTransitionEvent) => void>>();
+    return {
+      page: {
+        addEventListener: (type: 'pagehide' | 'pageshow', listener: (event: PageTransitionEvent) => void) => {
+          if (!listeners.has(type)) listeners.set(type, new Set());
+          listeners.get(type)!.add(listener);
+        },
+        removeEventListener: (type: 'pagehide' | 'pageshow', listener: (event: PageTransitionEvent) => void) => {
+          listeners.get(type)?.delete(listener);
+        },
+      },
+      fire: (type: 'pagehide' | 'pageshow', persisted: boolean) => {
+        listeners.get(type)?.forEach((listener) => listener({ persisted } as PageTransitionEvent));
+      },
+      listenerCount: () => (listeners.get('pagehide')?.size ?? 0) + (listeners.get('pageshow')?.size ?? 0),
+    };
+  }
+
+  it('unregisters when the page is stored and registers again when it is restored', async () => {
+    const registerTool = vi.fn().mockResolvedValue(undefined);
+    installBrowser({ registerTool });
+    const { page, fire } = fakePage();
+
+    keepWebMcpRegistered(tools, page);
+    await flushRegistration();
+    const firstSignal = registerTool.mock.calls[0]![1].signal as AbortSignal;
+    expect(registerTool).toHaveBeenCalledTimes(2);
+    expect(firstSignal.aborted).toBe(false);
+
+    fire('pagehide', true);
+    expect(firstSignal.aborted).toBe(true);
+
+    fire('pageshow', true);
+    await flushRegistration();
+    expect(mocks.updateWorkspace).toHaveBeenCalledWith({ webMcpStatus: 'registering' });
+    expect(registerTool).toHaveBeenCalledTimes(4);
+    const secondSignal = registerTool.mock.calls[2]![1].signal as AbortSignal;
+    expect(secondSignal).not.toBe(firstSignal);
+    expect(secondSignal.aborted).toBe(false);
+    expect(mocks.updateWorkspace).toHaveBeenLastCalledWith({ webMcpStatus: 'ready' });
+  });
+
+  it('leaves the tools alone when a page is discarded or loaded fresh, and never registers twice', async () => {
+    const registerTool = vi.fn().mockResolvedValue(undefined);
+    installBrowser({ registerTool });
+    const { page, fire } = fakePage();
+
+    keepWebMcpRegistered(tools, page);
+    await flushRegistration();
+    const signal = registerTool.mock.calls[0]![1].signal as AbortSignal;
+
+    fire('pagehide', false);
+    expect(signal.aborted).toBe(false);
+    fire('pageshow', false);
+    fire('pageshow', true);
+    await flushRegistration();
+    expect(registerTool).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops listening and unregisters on cleanup, also after the page was stored', async () => {
+    const registerTool = vi.fn().mockResolvedValue(undefined);
+    installBrowser({ registerTool });
+    const live = fakePage();
+    const stop = keepWebMcpRegistered(tools, live.page);
+    await flushRegistration();
+    const signal = registerTool.mock.calls[0]![1].signal as AbortSignal;
+    expect(live.listenerCount()).toBe(2);
+    stop();
+    expect(signal.aborted).toBe(true);
+    expect(live.listenerCount()).toBe(0);
+
+    const stored = fakePage();
+    const stopStored = keepWebMcpRegistered(tools, stored.page);
+    stored.fire('pagehide', true);
+    stopStored();
+    expect(stored.listenerCount()).toBe(0);
+  });
+
+  it('treats a model context without registerTool as not yet available', async () => {
+    installBrowser({} as { registerTool: ReturnType<typeof vi.fn> });
+    const unregister = registerWebMcpTools(tools);
+    await vi.runAllTimersAsync();
+    expect(mocks.updateWorkspace).toHaveBeenCalledWith({ webMcpStatus: 'unsupported' });
+    unregister();
   });
 });

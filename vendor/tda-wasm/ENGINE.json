@@ -1,0 +1,112 @@
+{
+  "package": "@topolab/tda-wasm",
+  "version": "0.3.0",
+  "repository": "https://github.com/topo-lab/tda-wasm",
+  "commit": "b2388f17f34fffe5f9092019eea0a08d124195a1",
+  "build": {
+    "date": "2026-10-25T09:05:39Z",
+    "engine": "wasm-bindgen",
+    "rust": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "wasm_bindgen": "0.2.129",
+    "wasm_opt": "wasm-opt version 132",
+    "raw_bytes": 1802100,
+    "f64x2_lane_reads_rewritten": 571,
+    "bytes": 1563310,
+    "glue_bytes": 84049,
+    "sources": "rust/ (tda-core, ot-diagram and musl-math through rust/tda-wasm); no C++; no GUDHI, Boost, Eigen or CGAL header is compiled (one MIT-derived Rust port of GUDHI farthest-point sampling is included; see THIRD_PARTY_LICENSES.md)"
+  },
+  "files": {
+    "LICENSE": {
+      "bytes": 1064,
+      "sha256": "1762986b0421648fb913642c01d2485cf10a46e050cd89640667ff5ebbf619f5"
+    },
+    "THIRD_PARTY_LICENSES.md": {
+      "bytes": 73096,
+      "sha256": "02122523986c49d39c0efcda3f24994b55abfc9cbddc695b1e000929df3af4bf"
+    },
+    "dist/check.d.ts": {
+      "bytes": 4788,
+      "sha256": "35f3fb9ae18842ef4abfaaff8ab91067caac67042a270ea17b68295c1b199530"
+    },
+    "dist/check.js": {
+      "bytes": 8463,
+      "sha256": "107b837e603966ccc274542dcefca87f1b948a43675df2f2c4a776c0567ec8f4"
+    },
+    "dist/complex.d.ts": {
+      "bytes": 27591,
+      "sha256": "bbf27942797b943d92de992dcc4c5bdc6bfe7c091825da0819c7075c43591af3"
+    },
+    "dist/complex.js": {
+      "bytes": 31703,
+      "sha256": "08b3666db8bbba6991a538ebeecd13e40fa6aedc591f6591751a66d3f061e3ac"
+    },
+    "dist/diagram.d.ts": {
+      "bytes": 5428,
+      "sha256": "df0da890db5b46eef28c00dbe5a362986ab728a5d42cac2ad9b2454d86b05283"
+    },
+    "dist/diagram.js": {
+      "bytes": 9911,
+      "sha256": "16a5ed615c5abc62c9226736803d00287fc64af6ec92ef7120408b5926511d41"
+    },
+    "dist/diagram_of.js": {
+      "bytes": 1666,
+      "sha256": "710ae52a0166b71c60bafe3fccd74811bb377ef4fac1ae1edb27b9e8a3489cdf"
+    },
+    "dist/flat.d.ts": {
+      "bytes": 2767,
+      "sha256": "ef766f3746199293e28379b5918ac05a97f993efa6479d2f1f6cc297b98bd179"
+    },
+    "dist/flat.js": {
+      "bytes": 6484,
+      "sha256": "1049698112b22ac59af2477337795e90d3eed79f818f9556f2fd750ee89937fa"
+    },
+    "dist/index.d.ts": {
+      "bytes": 3518,
+      "sha256": "fcbef7c1ce6dd98b5debb8aad7e9762b782cd3b88390431c5d0993ed658ce8a0"
+    },
+    "dist/index.js": {
+      "bytes": 1896,
+      "sha256": "8c00e59c16ee63dade0d3bb35577126e54a010bff656a07656464b28f909eea3"
+    },
+    "dist/load.d.ts": {
+      "bytes": 1973,
+      "sha256": "123834c859deaa331c4f49ed17a61a7d11edb9606727c6955410673f8179a791"
+    },
+    "dist/load.js": {
+      "bytes": 4955,
+      "sha256": "0294aff5f5afda710cc5d93f5758f74365def79ee9ba4ba7c71fe19bcb48009a"
+    },
+    "dist/memory.d.ts": {
+      "bytes": 2941,
+      "sha256": "12959a56b27597570c94232a7b3f494df7faf34f4deb5b60c00518f1bebe766a"
+    },
+    "dist/persistence.d.ts": {
+      "bytes": 16866,
+      "sha256": "61d6eb45f997f5d981a1f48e51f1daa49bf7e25c61bd6e4c64559e2808d85dbe"
+    },
+    "dist/persistence.js": {
+      "bytes": 21995,
+      "sha256": "fec9688a0f6a0a18d571011e1f648434ddc8de2e6f12940c6157e8b4972c6fdf"
+    },
+    "dist/pkg/tda_wasm.js": {
+      "bytes": 84049,
+      "sha256": "1d095f1dc800485919123e08736fa0af078a98ee94618ed78b10997847ed1786"
+    },
+    "dist/source.d.ts": {
+      "bytes": 1666,
+      "sha256": "33df152d433fc5a86b39ffc33285cb2c12aa5e13ceab86b4dcc83c1b707b502a"
+    },
+    "dist/source.js": {
+      "bytes": 2778,
+      "sha256": "1c753aacdf0bc65bfbc5c0aa361bd80599d458489c7ec47e4fda80392d1b04b5"
+    },
+    "dist/tda.wasm": {
+      "bytes": 1563310,
+      "sha256": "e020ff349f9d3ed858112b80ddb6ff64fab8b70bda92bd4ab3b0321a07037e1c"
+    },
+    "dist/types.d.ts": {
+      "bytes": 6548,
+      "sha256": "ef4b714cde240f9897e6f22a6e41df0d9f7fa194bd465e79dd32d98e04b76bdd"
+    }
+  }
+}

@@ -116,6 +116,9 @@ export function binarizeImage(
 }
 
 function morphDarkForeground(image: ScalarImage, operation: 'dilate' | 'erode'): ScalarImage {
+  // Outside the image counts as background when dilating and as foreground when eroding, so closing
+  // never eats an object away from the border it touches.
+  const outsideIsDark = operation === 'erode';
   const values = new Array<number>(image.values.length);
   for (let y = 0; y < image.height; y += 1) {
     for (let x = 0; x < image.width; x += 1) {
@@ -124,13 +127,8 @@ function morphDarkForeground(image: ScalarImage, operation: 'dilate' | 'erode'):
         for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
           const sampleX = x + offsetX;
           const sampleY = y + offsetY;
-          if (
-            sampleX >= 0 && sampleX < image.width
-            && sampleY >= 0 && sampleY < image.height
-            && image.values[sampleY * image.width + sampleX] === 0
-          ) {
-            darkCount += 1;
-          }
+          const inside = sampleX >= 0 && sampleX < image.width && sampleY >= 0 && sampleY < image.height;
+          if (inside ? image.values[sampleY * image.width + sampleX] === 0 : outsideIsDark) darkCount += 1;
         }
       }
       values[y * image.width + x] = operation === 'dilate'

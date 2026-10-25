@@ -18,4 +18,4 @@ The following photographs are bundled as human and WebMCP cubical-homology examp
 - License: Public domain (released by the copyright holder)
 - Change: Wikimedia Commons' 960-pixel preview is bundled without visual modification.
 
-The existing doughnut photograph remains the default sample and is not covered by the third-party entries above.
+The doughnut photograph, the default sample, is not covered by the third-party entries above.

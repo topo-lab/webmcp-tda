@@ -1,0 +1,19 @@
+{
+  "package": "tda-viz-react",
+  "version": "0.1.0",
+  "repository": "https://github.com/topo-lab/tda-viz-react",
+  "commit": "c73f1c783a90f44f10c8d1db962b052971bed02f",
+  "peerDependencies": {
+    "playcanvas": ">=2.0.0",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0",
+    "@topolab/tda-wasm": "^0.3.0"
+  },
+  "tarball": {
+    "file": "tda-viz-react-0.1.0.tgz",
+    "bytes": 613369,
+    "sha256": "c6b0518995a8bca702e63b7db00752d2be64830a5e8418383273e310e29e7ee8",
+    "integrity": "sha512-Iezh88IXhEJ/u2dmThJH/W7WyGEzfodvQ3j9CAoZ7sl+U7PcMoNUp1Dju9xwObFSvZeZ/NNXGBQCU2LH0mDhXw==",
+    "entryCount": 193
+  }
+}

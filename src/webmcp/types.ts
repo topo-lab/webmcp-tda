@@ -12,7 +12,8 @@ export interface WebMcpTool {
     untrustedContentHint?: boolean;
     consequentialHint?: boolean;
   };
-  execute: (input: Record<string, unknown>, options: ToolExecuteOptions) => Promise<unknown>;
+  /** Hosts differ: some pass no options and a null input, so both are optional here. */
+  execute: (input?: unknown, options?: ToolExecuteOptions) => Promise<unknown>;
 }
 
 export interface ModelContextApi {

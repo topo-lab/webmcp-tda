@@ -13,6 +13,7 @@ export interface SimplicialRequest {
   complex: ComplexKind;
   points: number[][];
   coefficientField?: number;
+  /** How many persistence pairs an agent receives (strongest first). The workbench always keeps up to 200. */
   resultLimit?: number;
   parameters?: ComplexParameters;
 }
@@ -45,6 +46,13 @@ export interface CubicalRequest {
   resultLimit?: number;
 }
 
+/** One interval of a diagram; `death` is `Infinity` for a class alive at the computed end. */
+export interface PersistencePair {
+  dimension: number;
+  birth: number;
+  death: number;
+}
+
 export interface SerializablePair {
   id: string;
   dimension: number;
@@ -54,9 +62,17 @@ export interface SerializablePair {
 }
 
 export interface PersistenceSummary {
+  /** Pairs in the dimensions the complex can be trusted for; see `excludedPairs`. */
   pairCount: number;
   pairsByDimension: Record<number, number>;
+  /** Classes that are still alive at the end of the filtration. */
   essentialCount: number;
+  essentialByDimension: Record<number, number>;
+  /** Per dimension: pairs still alive at the computed end or that live at least `persistenceThreshold`. */
+  persistentByDimension: Record<number, number>;
+  persistenceThreshold: number;
+  /** Pairs left out per dimension because the complex was capped below that dimension. */
+  excludedPairs: Record<number, number>;
   returnedPairCount: number;
   strongestPairs: SerializablePair[];
 }
@@ -90,7 +106,11 @@ export interface SimplicialResult {
     pointCount: number;
     dimension: number;
     coefficientField: number;
+    /** The filtration limits used. */
     parameters: ComplexParameters;
+    /** Limits the caller did not give; they were taken from the scale of the cloud. */
+    defaulted: Array<'maxEdgeLength' | 'maxRadius'>;
+    scale: { diameter: number; connectingDistance: number };
   };
   complexSummary: {
     simplexCount: number;
@@ -100,8 +120,9 @@ export interface SimplicialResult {
   visualization: SimplicialVisualization;
   persistence: PersistenceSummary;
   interpretation: {
+    /** Highest homology dimension the complex can be trusted for; higher classes are left out. */
     reliableThroughDimension: number;
-    warning: string | null;
+    warnings: string[];
   };
   elapsedMs: number;
 }

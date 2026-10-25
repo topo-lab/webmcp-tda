@@ -1,14 +1,26 @@
 /**
- * tda-wasm: WebAssembly Topological Data Analysis Toolkit
+ * `@topolab/tda-wasm`: topological data analysis on WebAssembly (a Rust
+ * core). Call {@link load} once; the functions are then plain calls.
  *
- * Main entry point - re-exports from persistent_cohomology module
- * for backwards compatibility and convenience.
+ * Point clouds are `{ coords, d }` (row-major `Float64Array`, `d`
+ * coordinates per point; {@link pointCloud} converts rows), images and
+ * volumes `{ values, shape }` in NumPy's order. Complexes come back as typed
+ * arrays (`{ vertices, offsets, filtrations, scale }`) and diagrams as one
+ * `[birth, death, …]` array per homology dimension (`{ pairs, scale, coeff }`).
+ * Results are plain objects of typed arrays, numbers, strings and booleans,
+ * so they survive `postMessage` and `structuredClone` whole. A bad argument
+ * throws a `TypeError` (wrong type) or a `RangeError` (out of range) whose
+ * message names the parameter; a failure inside an engine throws an `Error`
+ * with the engine's message.
+ *
+ * Functions are named for what they return: `xComplex` a filtered complex,
+ * `xPersistence` a persistence diagram, `diagramX` a distance between two
+ * diagrams; variants are options.
+ *
+ * @packageDocumentation
  */
-// Re-export the main class and utilities
-export { GudhiPersistentCohomology, getDefaultInstance } from './persistent_cohomology.js';
-// Re-export types
-export * from './persistent_cohomology_types.js';
-export * from './types.js';
-// Legacy alias for backwards compatibility
-export { GudhiPersistentCohomology as GudhiAlphaComplex } from './persistent_cohomology.js';
-//# sourceMappingURL=index.js.map
+export { load, unload, isLoaded, version } from './load.js';
+export { ripsComplex, cechComplex, cechPersistence, delaunayCechComplex, alphaComplex, alphaPersistence, coupledAlphaComplex, witnessComplex, kFoldCoverComplex, kFoldCoverPersistence, ellipsoids, ellipsoidRipsComplex, ellipsoidRipsPersistence, ellipsoidCechComplex, ellipsoidCechPersistence, wings, wingComplex, wingPersistence, boxFiltration, boxFiltrationPersistence, cubicalComplex } from './complex.js';
+export { persistence, ripsPersistence, cubicalPersistence, zigzagPersistence, insertOp, removeOp, volumeOptimalCycles } from './persistence.js';
+export { bettiNumbers, bettiCurve, persistenceLandscape, persistenceImage, diagramWasserstein, diagramBottleneck } from './diagram.js';
+export { pointCloud, materialize, flatten } from './flat.js';

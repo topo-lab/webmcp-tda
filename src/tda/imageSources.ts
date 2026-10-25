@@ -44,6 +44,9 @@ export async function loadImageSource(source: Blob | string, name: string, signa
   canvas.height = height;
   const context = canvas.getContext('2d', { willReadFrequently: true });
   if (!context) throw new Error('Canvas is unavailable.');
+  // Transparent pixels would read as black; composite over white, the usual page background of a logo or drawing.
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, width, height);
   context.drawImage(bitmap, 0, 0, width, height);
   bitmap.close();
   const rgba = context.getImageData(0, 0, width, height).data;

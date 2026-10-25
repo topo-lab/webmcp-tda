@@ -1,10 +1,14 @@
+import { animateDisclosures } from "./disclosures";
 import { getWorkspaceState, subscribeWorkspace, updateWorkspace, type WebMcpStatus } from '../state';
+import { isAbortError } from '../tda/errors';
 import { CAPABILITIES } from '../tda/capabilities';
 import { IMAGE_SAMPLES, loadImageSample, loadImageSource } from '../tda/imageSources';
 import { POINT_SAMPLE_IDS, pointSample, type PointSampleId } from '../tda/samples';
 import { binarizeImage, closeBinaryImage, gaussianBlurImage, otsuThreshold, type ForegroundPolarity } from '../tda/imageProcessing';
 import { tdaRuntime } from '../tda/runtime';
-import { defaultMaximumSimplexDimension } from '../tda/validation';
+import { formatScale } from '../tda/scale';
+import { PERSISTENCE_FRACTION } from '../tda/summary';
+import { defaultMaximumSimplexDimension, MAX_POINTS, validateSimplicialRequest } from '../tda/validation';
 import { COMPLEX_KINDS } from '../tda/types';
 import type {
   ComplexKind,
@@ -13,9 +17,12 @@ import type {
   CubicalRequest,
   ImageSampleId,
   ScalarImage,
+  SerializablePair,
   SimplicialResult,
 } from '../tda/types';
-import { renderPersistenceDiagram, unmountPersistenceDiagram } from './persistenceDiagram';
+import { bindBarcodeHover, renderBarcode, setBarcodeHighlight } from './barcode';
+import { createMotionController } from './motion';
+import { cancelPendingDiagramEmphasis, emphasizeDiagramPair, onPersistenceDiagramHover, renderPersistenceDiagram, unmountPersistenceDiagram } from './persistenceDiagram';
 import { mountPointCloudVisualization } from './pointCloudVisualization';
 
 export const WORKBENCH_COMPLEX_KINDS = [...COMPLEX_KINDS];
@@ -23,7 +30,7 @@ export const WORKBENCH_COMPLEX_KINDS = [...COMPLEX_KINDS];
 const WEB_MCP_STATUS_LABELS: Record<WebMcpStatus, string> = {
   registering: 'WebMCP checking',
   ready: 'WebMCP ready',
-  unsupported: 'WebMCP Unavailable in this browser',
+  unsupported: 'WebMCP unavailable in this browser',
   error: 'WebMCP error',
 };
 
@@ -49,11 +56,11 @@ interface ParameterField {
 
 const PARAMETER_FIELDS: Record<ComplexKind, ParameterField[]> = {
   rips: [
-    { key: 'maxEdgeLength', label: 'Maximum edge length', help: 'Connect points no farther apart than this.', min: 0.05, step: 0.05 },
+    { key: 'maxEdgeLength', label: 'Maximum edge length', help: 'Connect points no farther apart than this.' },
   ],
   alpha: [],
   cech: [
-    { key: 'maxRadius', label: 'Maximum ball radius', help: 'Grow equal-radius balls around every point.', min: 0.05, step: 0.05 },
+    { key: 'maxRadius', label: 'Maximum ball radius', help: 'Grow equal-radius balls around every point.' },
   ],
 };
 
@@ -163,6 +170,7 @@ export function imagePipelinePresentation(useBinaryMask: boolean): {
 export function parsePointInput(text: string): number[][] {
   const parsed = JSON.parse(text) as unknown;
   if (!Array.isArray(parsed) || parsed.length < 2) throw new Error('Enter an array containing at least two points.');
+  if (parsed.length > MAX_POINTS) throw new Error(`At most ${MAX_POINTS} points are supported.`);
   const dimension = Array.isArray(parsed[0]) ? parsed[0].length : 0;
   if (dimension !== 2 && dimension !== 3) throw new Error('Every point must have two or three coordinates.');
   if (!parsed.every((point) => Array.isArray(point) && point.length === dimension && point.every((value) => typeof value === 'number' && Number.isFinite(value)))) {
@@ -176,15 +184,29 @@ function identifyPointSample(points: number[][]): PointSampleId | 'custom' {
   return POINT_SAMPLE_IDS.find((id) => JSON.stringify(pointSample(id)) === serialized) ?? 'custom';
 }
 
-function resultDescription(result: ComputeResult): string {
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+export function resultDescription(result: ComputeResult): string {
+  const { persistence } = result;
+  const reliable = result.kind === 'simplicial' ? result.interpretation.reliableThroughDimension : Number.POSITIVE_INFINITY;
+  const found = [plural(persistence.essentialByDimension[0] ?? 0, 'connected component')];
+  if (reliable >= 1) found.push(`${plural(persistence.persistentByDimension[1] ?? 0, 'long-lived loop')} (H₁)`);
+  if (result.kind === 'simplicial' && result.input.dimension === 3 && reliable >= 2) {
+    found.push(`${plural(persistence.persistentByDimension[2] ?? 0, 'long-lived void')} (H₂)`);
+  }
+  const longLived = persistence.persistenceThreshold > 0
+    ? `Long-lived means the class survives to the computed end, or lives at least ${formatScale(persistence.persistenceThreshold)} (${PERSISTENCE_FRACTION * 100}% as long as the longest-lived class of dimension 1 or higher).`
+    : 'Long-lived means the class survives to the computed end.';
   if (result.kind === 'simplicial') {
-    const base = `${COMPLEX_LABELS[result.complex]} on ${result.input.pointCount} ${result.input.dimension}D points produced ${metricValue(result.complexSummary.simplexCount)} simplices.`;
-    return result.interpretation.warning ? `${base} ${result.interpretation.warning}` : base;
+    const base = `${COMPLEX_LABELS[result.complex]} on ${result.input.pointCount} ${result.input.dimension}D points found ${found.join(', ')}. ${longLived}`;
+    return [base, ...result.interpretation.warnings].join(' ');
   }
   const preprocessing = result.input.binarized
     ? `It was segmented at gray level ${result.input.threshold} with ${result.input.foreground} pixels as foreground.`
     : 'Its grayscale values were used directly.';
-  return `${result.input.name} was analyzed as a ${result.input.width} × ${result.input.height} ${result.input.filtration} cubical filtration over F2. ${preprocessing}`;
+  return `${result.input.name} was analyzed as a ${result.input.width} × ${result.input.height} ${result.input.filtration} cubical filtration over F2. ${preprocessing} It has ${found.join(', ')}. ${longLived}`;
 }
 
 export function mountApp(root: HTMLElement): () => void {
@@ -195,7 +217,10 @@ export function mountApp(root: HTMLElement): () => void {
         <a href="#workbench">Workbench</a>
         <a href="#agent-access">Agent access</a>
       </nav>
-      <span id="webmcp-status" class="status-pill" title="WebMCP registration status">WebMCP checking</span>
+      <div class="masthead-status">
+        <button id="pause-motion" class="motion-toggle" type="button" aria-pressed="false">Pause motion</button>
+        <span id="webmcp-status" class="status-pill" title="WebMCP registration status">WebMCP checking</span>
+      </div>
     </header>
 
     <main id="top">
@@ -206,7 +231,7 @@ export function mountApp(root: HTMLElement): () => void {
         </div>
         <div class="hero-copy">
           <p class="lede">Compute topology from point clouds and images. Work directly in the lab, or ask your agent to use the same tools while you watch the results appear.</p>
-          <div class="trust-row" aria-label="Runtime properties"><span>Local WASM</span><span>No upload</span><span>Shared with your agent</span></div>
+          <div class="trust-row" aria-label="Runtime properties"><span>Local WASM</span><span>On-device computation</span><span>Shared with your agent</span></div>
         </div>
       </section>
 
@@ -217,13 +242,13 @@ export function mountApp(root: HTMLElement): () => void {
         </div>
 
         <div class="mode-switch" role="tablist" aria-label="Input type">
-          <button class="mode-tab" type="button" role="tab" aria-selected="true" aria-controls="simplicial-panel" data-mode="simplicial"><span>Point cloud</span><small>Simplicial persistence</small></button>
-          <button class="mode-tab" type="button" role="tab" aria-selected="false" aria-controls="cubical-panel" data-mode="cubical"><span>Image</span><small>Cubical persistence</small></button>
+          <button id="simplicial-tab" class="mode-tab" type="button" role="tab" aria-selected="true" aria-controls="simplicial-panel" tabindex="0" data-mode="simplicial"><span>Point cloud</span><small>Simplicial persistence</small></button>
+          <button id="cubical-tab" class="mode-tab" type="button" role="tab" aria-selected="false" aria-controls="cubical-panel" tabindex="-1" data-mode="cubical"><span>Image</span><small>Cubical persistence</small></button>
         </div>
 
         <div class="workbench-grid">
           <div class="input-pane">
-            <form id="simplicial-panel" class="input-form" role="tabpanel" aria-label="Simplicial persistence controls">
+            <form id="simplicial-panel" class="input-form" role="tabpanel" aria-labelledby="simplicial-tab" novalidate>
               <div class="control-grid control-grid--three">
                 <label>Example dataset<select id="point-sample"><option value="circle">Circle · 2D</option><option value="figure-eight">Figure eight · 2D</option><option value="clusters">Two clusters · 2D</option><option value="sphere">Sphere · 3D</option><option value="custom">Custom / agent input</option></select></label>
                 <label>Complex<select id="complex-kind">${WORKBENCH_COMPLEX_KINDS.map((value) => `<option value="${value}">${COMPLEX_LABELS[value]}</option>`).join('')}</select></label>
@@ -232,7 +257,7 @@ export function mountApp(root: HTMLElement): () => void {
               <p id="complex-note" class="context-note"></p>
               <figure class="data-stage">
                 <figcaption><span>Point-cloud preview</span><strong id="point-meta">32 points · 2D</strong></figcaption>
-                <div id="point-preview" class="point-cloud-stage" role="img" aria-label="Interactive point-cloud preview"></div>
+                <div id="point-preview" class="point-cloud-stage" role="group" aria-label="Interactive point-cloud preview"></div>
                 <div id="point-tools" class="point-tools" role="toolbar" aria-label="Point-cloud display and editing tools">
                   <button type="button" data-point-tool="move" aria-pressed="true"><span aria-hidden="true">↔</span> Move</button>
                   <button type="button" data-point-tool="edit" aria-pressed="false"><span aria-hidden="true">x,y</span> Edit</button>
@@ -245,8 +270,8 @@ export function mountApp(root: HTMLElement): () => void {
                 <label><span>Filtration scale</span><input id="filtration-progress" type="range" min="0" max="1000" value="1000" disabled></label>
                 <output id="filtration-value">Compute first</output>
               </div>
-              <div class="run-row run-row--after-player"><button id="run-simplicial" class="primary-action" type="submit">Compute simplicial persistence</button><p>Runs locally. Larger complexes may take a moment.</p></div>
-              <div id="parameter-heading" class="parameter-heading"><div><h3>Filtration settings</h3><p>Only geometry-specific controls are shown.</p></div></div>
+              <div class="run-row run-row--after-player"><button id="run-simplicial" class="primary-action" type="submit">Compute simplicial persistence</button><button id="cancel-simplicial" class="secondary-action cancel-compute" type="button" hidden>Cancel</button><p>Runs locally. Larger complexes may take a moment.</p></div>
+              <div id="parameter-heading" class="parameter-heading"><div><h3>Filtration settings</h3></div></div>
               <div id="parameter-fields" class="parameter-grid"></div>
               <details class="advanced-input">
                 <summary>Edit point coordinates</summary>
@@ -255,7 +280,7 @@ export function mountApp(root: HTMLElement): () => void {
               </details>
             </form>
 
-            <form id="cubical-panel" class="input-form" role="tabpanel" aria-label="Cubical persistence controls" hidden>
+            <form id="cubical-panel" class="input-form" role="tabpanel" aria-labelledby="cubical-tab" novalidate hidden>
               <div class="control-grid control-grid--three">
                 <label>Example image<select id="image-sample">${Object.entries(IMAGE_SAMPLES).map(([value, sample]) => `<option value="${value}">${sample.label} photo</option>`).join('')}<option value="custom">Custom / agent image</option></select></label>
                 <label>Filtration<select id="filtration"><option value="sublevel">Sublevel · foreground first</option><option value="superlevel">Superlevel · background first</option></select></label>
@@ -280,7 +305,7 @@ export function mountApp(root: HTMLElement): () => void {
                   </div>
                 </div>
               </figure>
-              <div class="run-row"><button id="run-cubical" class="primary-action" type="submit">Compute cubical persistence</button><p>Images never leave your browser.</p></div>
+              <div class="run-row"><button id="run-cubical" class="primary-action" type="submit">Compute cubical persistence</button><button id="cancel-cubical" class="secondary-action cancel-compute" type="button" hidden>Cancel</button><p>Image processing runs on your device.</p></div>
               <div class="method-note"><strong>How it works</strong><p>Photo → grayscale → gentle Gaussian denoise → Otsu or manual threshold → small-hole cleanup → binary cubical filtration over F₂. Turn off the mask to use grayscale intensities directly.</p></div>
             </form>
           </div>
@@ -289,12 +314,13 @@ export function mountApp(root: HTMLElement): () => void {
             <div class="result-heading"><div><p class="eyebrow">Shared result</p><h2 id="result-title">Persistence summary</h2></div><span id="compute-status" class="compute-status">Idle</span></div>
             <p id="activity" class="activity" role="status" aria-live="polite" aria-atomic="true">Choose an example and run a computation.</p>
             <div class="metric-grid" aria-label="Result metrics">
-              <div><span>Features</span><strong id="metric-features">—</strong></div>
-              <div><span>Essential</span><strong id="metric-essential">—</strong></div>
-              <div><span>H₁ loops</span><strong id="metric-loops">—</strong></div>
+              <div title="Connected components left at the end of the filtration (essential H₀ classes)."><span>Components</span><strong id="metric-components">—</strong></div>
+              <div title="H₁ classes that survive to the computed end, or live at least 20% as long as the longest-lived class of dimension 1 or higher."><span>Loops</span><strong id="metric-loops">—</strong></div>
+              <div title="H₂ classes of a 3D cloud that survive to the computed end, or live at least 20% as long as the longest-lived class of dimension 1 or higher."><span>Voids</span><strong id="metric-voids">—</strong></div>
               <div><span>Runtime</span><strong id="metric-runtime">—</strong></div>
             </div>
-            <figure class="diagram-card"><figcaption><span>Persistence diagram</span><span class="diagram-legend"><i class="h0"></i>H₀ <i class="h1"></i>H₁ <i class="h2"></i>H₂</span></figcaption><div id="diagram" role="img" aria-label="Interactive persistence diagram"></div></figure>
+            <figure class="diagram-card"><figcaption><span>Persistence diagram</span><span class="diagram-legend"><i class="h0"></i>H₀ <i class="h1"></i>H₁ <i class="h2"></i>H₂</span></figcaption><div id="diagram" role="group" aria-label="Interactive persistence diagram"></div><p id="diagram-note" class="diagram-note">Run a computation to see its pairs.</p></figure>
+            <figure class="diagram-card barcode-card"><figcaption><span>Persistence barcode</span><span class="diagram-legend"><i class="h0"></i>H₀ <i class="h1"></i>H₁ <i class="h2"></i>H₂</span></figcaption><div id="barcode" role="group" aria-label="Persistence barcode"></div><p id="barcode-note" class="diagram-note">Run a computation to see its intervals.</p></figure>
             <div class="interpretation"><strong>What this result says</strong><p id="result-description">Connected components, loops, and higher-dimensional features will appear here after computation.</p></div>
             <details class="raw-result"><summary>Inspect structured result</summary><button id="copy-result" class="secondary-action" type="button" disabled>Copy JSON</button><pre id="result-json">No result yet.</pre></details>
           </aside>
@@ -302,7 +328,7 @@ export function mountApp(root: HTMLElement): () => void {
       </section>
 
       <section id="agent-access" class="agent-section" aria-labelledby="agent-title">
-        <div class="agent-intro"><p class="eyebrow">Agent access</p><h2 id="agent-title">One workbench, two ways to use it.</h2><p>These tools expose the same calculations and update the same visible result. Your agent can inspect capabilities, run a computation, and hand the result back without guessing through the interface.</p></div>
+        <div class="agent-intro"><p class="eyebrow">Agent access</p><h2 id="agent-title">One workbench, two ways to use it.</h2><p>These tools expose the same calculations and update the same visible result. Your agent can inspect capabilities, run a computation, and return results in the same workspace.</p></div>
         <div class="tool-list">
           <article><code>tda_get_capabilities</code><p>Discover supported complexes, parameters, units, and safety limits.</p><span>Read only</span></article>
           <article><code>tda_compute_simplicial_persistence</code><p>Compute one-parameter persistence from 2D or 3D point coordinates.</p><span>Updates workbench</span></article>
@@ -312,7 +338,10 @@ export function mountApp(root: HTMLElement): () => void {
       </section>
     </main>
 
-    <footer><span>WebMCP Challenge 2026</span><span>Human-first · agent-ready · browser-local</span></footer>
+    <footer>
+      <span>WebMCP TDA</span><a href="https://topolab.ai/">topolab</a>
+      <details class="credits"><summary>Credits and licences</summary><p id="credits">Credits and licences: persistence is computed by @topolab/tda-wasm (MIT, <a href="licenses/tda-wasm/LICENSE.txt">licence</a>, <a href="licenses/tda-wasm/THIRD_PARTY_LICENSES.txt">third-party notices</a>); point clouds are drawn with tda-viz-react (MIT, <a href="licenses/tda-viz-react/LICENSE.txt">licence</a>). Pretzel photo by Willis Lam, <a href="https://creativecommons.org/licenses/by-sa/2.0/" rel="license noopener" target="_blank">CC BY-SA 2.0</a>; eyeglasses photo by Batholith, public domain; both via <a href="https://commons.wikimedia.org/" rel="noopener" target="_blank">Wikimedia Commons</a>.</p></details>
+    </footer>
   `;
 
   const modeTabs = [...document.querySelectorAll<HTMLButtonElement>('[data-mode]')];
@@ -354,6 +383,9 @@ export function mountApp(root: HTMLElement): () => void {
   const maskPreview = element<HTMLCanvasElement>('#mask-preview');
   const imageMeta = element<HTMLElement>('#image-meta');
   const diagram = element<HTMLElement>('#diagram');
+  const barcode = element<HTMLElement>('#barcode');
+  const barcodeNote = element<HTMLElement>('#barcode-note');
+  const pauseMotion = element<HTMLButtonElement>('#pause-motion');
   const resultJson = element<HTMLPreElement>('#result-json');
   const copyResult = element<HTMLButtonElement>('#copy-result');
   const resultDescriptionElement = element<HTMLParagraphElement>('#result-description');
@@ -362,9 +394,12 @@ export function mountApp(root: HTMLElement): () => void {
   const webMcpStatus = element<HTMLElement>('#webmcp-status');
   const runSimplicial = element<HTMLButtonElement>('#run-simplicial');
   const runCubical = element<HTMLButtonElement>('#run-cubical');
-  const metricFeatures = element<HTMLElement>('#metric-features');
-  const metricEssential = element<HTMLElement>('#metric-essential');
+  const metricComponents = element<HTMLElement>('#metric-components');
   const metricLoops = element<HTMLElement>('#metric-loops');
+  const metricVoids = element<HTMLElement>('#metric-voids');
+  const diagramNote = element<HTMLElement>('#diagram-note');
+  const cancelButtons = [...document.querySelectorAll<HTMLButtonElement>('.cancel-compute')];
+  const resultPane = element<HTMLElement>('.result-pane');
   const metricRuntime = element<HTMLElement>('#metric-runtime');
 
   let currentPoints = pointSample('circle');
@@ -377,18 +412,49 @@ export function mountApp(root: HTMLElement): () => void {
   let filtrationFrame: number | null = null;
   let pointInteractionMode: 'move' | 'edit' = 'move';
   let showPointAxes = false;
+  let highlightedPairId: string | null = null;
+  let displayedPairs: SerializablePair[] = [];
   const pointVisualization = mountPointCloudVisualization(pointPreview);
+  const motion = createMotionController({
+    storage: localStorage,
+    reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)'),
+    root: document.documentElement,
+  });
+  pauseMotion.setAttribute('aria-pressed', String(motion.paused()));
 
+  const showIntervals = (pairs: SerializablePair[], playhead?: number) => {
+    displayedPairs = pairs;
+    if (highlightedPairId && !pairs.some((pair) => pair.id === highlightedPairId)) highlightedPairId = null;
+    renderPersistenceDiagram(diagram, pairs, { playhead });
+    renderBarcode(barcode, pairs, { playhead, highlightedId: highlightedPairId });
+    emphasizeDiagramPair(diagram, pairs, highlightedPairId);
+  };
+
+  const cleanupDisclosures = animateDisclosures(root, () => motion.paused());
+  let selectedMode = 'simplicial';
+  let panelAnimation: Animation | null = null;
   const setMode = (mode: 'simplicial' | 'cubical') => {
-    modeTabs.forEach((tab) => tab.setAttribute('aria-selected', String(tab.dataset.mode === mode)));
+    modeTabs.forEach((tab) => {
+      const selected = tab.dataset.mode === mode;
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+    });
     simplicialPanel.hidden = mode !== 'simplicial';
     cubicalPanel.hidden = mode !== 'cubical';
+    if (selectedMode !== mode) {
+      panelAnimation?.cancel();
+      if (!motion.paused() && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        const panel = mode === 'cubical' ? cubicalPanel : simplicialPanel;
+        panelAnimation = panel.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220, easing: 'ease-out' });
+      }
+      selectedMode = mode;
+    }
     if (mode === 'cubical' && activeSimplicialResult) {
       stopFiltrationAnimation();
       filtrationRatio = 1;
       showFiltrationPlayhead = false;
       syncPointPreview();
-      renderPersistenceDiagram(diagram, activeSimplicialResult.persistence.strongestPairs);
+      showIntervals(activeSimplicialResult.persistence.strongestPairs);
     }
   };
 
@@ -441,23 +507,20 @@ export function mountApp(root: HTMLElement): () => void {
         value: currentT,
         showCover: showFiltrationPlayhead,
       } : undefined,
+      autoRotate: !motion.paused(),
       onPointsChange: dimension === 2 ? (nextPoints) => {
         stopFiltrationAnimation();
         activeSimplicialResult = null;
         filtrationRatio = 1;
         showFiltrationPlayhead = false;
-        updateWorkspace({
-          status: 'idle',
-          latestResult: null,
-          error: null,
-          activity: 'Point coordinates changed. Compute persistence to rebuild the filtration.',
-        });
+        tdaRuntime.invalidateResult('Point coordinates changed. Compute persistence to rebuild the filtration.');
         setPoints(nextPoints);
         pointSampleSelect.value = 'custom';
       } : undefined,
     });
     pointMeta.textContent = `${currentPoints.length} points · ${dimension}D`;
     pointPreview.setAttribute('aria-label', `Interactive point cloud with ${currentPoints.length} points in ${dimension} dimensions`);
+    pointPreview.dataset.autoRotate = String(!motion.paused());
     pointTools.hidden = dimension !== 2;
     pointToolButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.pointTool === pointInteractionMode)));
     pointAxesButton.setAttribute('aria-pressed', String(showPointAxes));
@@ -507,21 +570,47 @@ export function mountApp(root: HTMLElement): () => void {
     pointsInput.value = JSON.stringify(points, null, 2);
     pointFeedback.textContent = 'Every point must have two or three coordinates.';
     pointFeedback.dataset.status = 'valid';
+    pointsInput.setAttribute('aria-invalid', 'false');
     syncPointPreview();
   };
 
   let imageLoadGeneration = 0;
-  const setImage = (image: ScalarImage, label: string, rgba?: Uint8ClampedArray) => {
+  let imageLoading = false;
+  const setImage = (image: ScalarImage, label: string | null, rgba?: Uint8ClampedArray) => {
     automaticThreshold = true;
-    updateWorkspace({ currentImage: image, currentImageRgba: rgba ?? null, activity: `Loaded ${label}.`, error: null });
+    invalidateImageResult();
+    updateWorkspace({
+      currentImage: image,
+      currentImageRgba: rgba ?? null,
+      error: null,
+      ...(label === null ? {} : { activity: `Loaded ${label}.` }),
+    });
   };
 
-  const loadSelectedImageSample = async (id: ImageSampleId) => {
+  /** The preload of the default image is silent: the person is looking at the point-cloud tab. */
+  const loadSelectedImageSample = async (id: ImageSampleId, { quiet = false }: { quiet?: boolean } = {}) => {
     const generation = ++imageLoadGeneration;
+    imageLoading = true;
     const sample = IMAGE_SAMPLES[id];
-    updateWorkspace({ activity: `Loading the ${sample.label.toLowerCase()} example…`, error: null });
-    const loaded = await loadImageSample(id);
-    if (generation === imageLoadGeneration) setImage(loaded.image, sample.label.toLowerCase(), loaded.rgba);
+    const imageWhenStarted = getWorkspaceState().currentImage;
+    invalidateImageResult();
+    updateWorkspace(quiet ? {} : { activity: `Loading the ${sample.label.toLowerCase()} example…`, error: null });
+    try {
+      const loaded = await loadImageSample(id);
+      // A preload nobody asked for must not replace an image the person or an agent set while it was loading.
+      const replacedMeanwhile = quiet && getWorkspaceState().currentImage !== imageWhenStarted;
+      if (generation === imageLoadGeneration && !replacedMeanwhile) setImage(loaded.image, quiet ? null : sample.label.toLowerCase(), loaded.rgba);
+    } catch (error) {
+      if (generation === imageLoadGeneration) {
+        imageSelect.value = Object.entries(IMAGE_SAMPLES).find(([, entry]) => entry.name === getWorkspaceState().currentImage.name)?.[0] ?? 'custom';
+        updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) });
+      }
+    } finally {
+      if (generation === imageLoadGeneration) {
+        imageLoading = false;
+        updateWorkspace({});
+      }
+    }
   };
 
   const renderParameters = (kind: ComplexKind) => {
@@ -537,7 +626,7 @@ export function mountApp(root: HTMLElement): () => void {
       return `<label>${field.label}${control}<small>${field.help}</small></label>`;
     }).join('');
     const capability = CAPABILITIES.simplicialComplexes.find((entry) => entry.id === kind)!;
-    complexNote.innerHTML = `<strong>${capability.filtrationUnits}</strong> · ${capability.note}`;
+    complexNote.innerHTML = `<strong>${capability.filtrationUnits}</strong> · ${capability.note}${capability.status === 'experimental' ? ' Experimental in tda-wasm 0.3.' : ''}`;
   };
 
   const applyParameterValues = (parameters: ComplexParameters = {}) => {
@@ -574,11 +663,7 @@ export function mountApp(root: HTMLElement): () => void {
       ? 'Pause filtration'
       : filtrationRatio >= 1 ? 'Replay filtration' : 'Play filtration';
     syncPointPreview();
-    renderPersistenceDiagram(
-      diagram,
-      activeSimplicialResult.persistence.strongestPairs,
-      { playhead: withPlayhead ? t : undefined },
-    );
+    showIntervals(activeSimplicialResult.persistence.strongestPairs, withPlayhead ? t : undefined);
   };
 
   const resetFiltration = (message?: string) => {
@@ -590,26 +675,45 @@ export function mountApp(root: HTMLElement): () => void {
     filtrationProgress.disabled = true;
     toggleFiltration.textContent = 'Play filtration';
     filtrationValue.value = 'Compute first';
-    if (message) updateWorkspace({ status: 'idle', latestResult: null, error: null, activity: message });
+    if (message) tdaRuntime.invalidateResult(message);
   };
 
+  const invalidateImageResult = () => {
+    const state = getWorkspaceState();
+    if (state.latestResult?.kind === 'cubical' || (state.status === 'computing' && (state.latestRequest as { kind?: string })?.kind === 'cubical')) {
+      tdaRuntime.invalidateResult('Image settings changed. Compute persistence to update the result.');
+    }
+  };
+
+  let renderedResult: ComputeResult | null | undefined;
   const updateResult = (result: ComputeResult | null) => {
+    if (result === renderedResult) return;
+    renderedResult = result;
     if (!result) {
       resetFiltration();
-      metricFeatures.textContent = '—';
-      metricEssential.textContent = '—';
+      metricComponents.textContent = '—';
       metricLoops.textContent = '—';
+      metricVoids.textContent = '—';
       metricRuntime.textContent = '—';
+      diagramNote.textContent = 'Run a computation to see its pairs.';
+      barcodeNote.textContent = 'Run a computation to see its intervals.';
       resultDescriptionElement.textContent = 'Connected components, loops, and higher-dimensional features will appear here after computation.';
       resultJson.textContent = '';
       copyResult.disabled = true;
-      renderPersistenceDiagram(diagram, []);
+      showIntervals([]);
       return;
     }
-    metricFeatures.textContent = metricValue(result.persistence.pairCount);
-    metricEssential.textContent = metricValue(result.persistence.essentialCount);
-    metricLoops.textContent = metricValue(result.persistence.pairsByDimension[1] ?? 0);
+    const reliable = result.kind === 'simplicial' ? result.interpretation.reliableThroughDimension : Number.POSITIVE_INFINITY;
+    metricComponents.textContent = metricValue(result.persistence.essentialByDimension[0] ?? 0);
+    metricLoops.textContent = reliable >= 1 ? metricValue(result.persistence.persistentByDimension[1] ?? 0) : '—';
+    metricVoids.textContent = result.kind === 'simplicial' && result.input.dimension === 3 && reliable >= 2
+      ? metricValue(result.persistence.persistentByDimension[2] ?? 0)
+      : '—';
     metricRuntime.textContent = `${metricValue(result.elapsedMs)} ms`;
+    const hiddenPairs = Object.values(result.persistence.excludedPairs).reduce((sum, count) => sum + count, 0);
+    diagramNote.textContent = `Showing ${result.persistence.returnedPairCount} of ${result.persistence.pairCount} pairs`
+      + (hiddenPairs > 0 ? ` · ${hiddenPairs} truncation artifacts hidden` : '');
+    barcodeNote.textContent = 'Same intervals as the diagram.';
     resultDescriptionElement.textContent = resultDescription(result);
     resultJson.textContent = JSON.stringify(result, null, 2);
     copyResult.disabled = false;
@@ -629,18 +733,31 @@ export function mountApp(root: HTMLElement): () => void {
         : result.visualization.reason ?? 'Unavailable';
       toggleFiltration.textContent = 'Replay filtration';
       syncPointPreview();
-      renderPersistenceDiagram(
-        diagram,
+      showIntervals(
         result.persistence.strongestPairs,
-        { playhead: showFiltrationPlayhead ? currentFiltrationValue() : undefined },
+        showFiltrationPlayhead ? currentFiltrationValue() : undefined,
       );
     } else {
       resetFiltration();
-      renderPersistenceDiagram(diagram, result.persistence.strongestPairs);
+      showIntervals(result.persistence.strongestPairs);
     }
   };
 
-  modeTabs.forEach((tab) => tab.addEventListener('click', () => setMode(tab.dataset.mode as 'simplicial' | 'cubical')));
+  modeTabs.forEach((tab, index) => {
+    tab.addEventListener('click', () => setMode(tab.dataset.mode as 'simplicial' | 'cubical'));
+    tab.addEventListener('keydown', (event) => {
+      let next: number;
+      if (event.key === 'ArrowRight') next = (index + 1) % modeTabs.length;
+      else if (event.key === 'ArrowLeft') next = (index + modeTabs.length - 1) % modeTabs.length;
+      else if (event.key === 'Home') next = 0;
+      else if (event.key === 'End') next = modeTabs.length - 1;
+      else return;
+      event.preventDefault();
+      const target = modeTabs[next]!;
+      setMode(target.dataset.mode as 'simplicial' | 'cubical');
+      target.focus();
+    });
+  });
 
   pointToolButtons.forEach((button) => button.addEventListener('click', () => {
     pointInteractionMode = button.dataset.pointTool as 'move' | 'edit';
@@ -665,19 +782,28 @@ export function mountApp(root: HTMLElement): () => void {
     syncPointPreview();
   });
 
-  parameterFields.addEventListener('input', syncPointPreview);
+  coefficientField.addEventListener('change', () => {
+    resetFiltration('Coefficient field changed. Compute persistence to update the result.');
+  });
+
+  parameterFields.addEventListener('input', () => {
+    resetFiltration('Filtration settings changed. Compute persistence to rebuild the filtration.');
+    syncPointPreview();
+  });
 
   pointsInput.addEventListener('input', () => {
+    resetFiltration('Point coordinates changed. Compute persistence to rebuild the filtration.');
     try {
       currentPoints = parsePointInput(pointsInput.value);
-      resetFiltration('Point coordinates changed. Compute persistence to rebuild the filtration.');
       pointSampleSelect.value = identifyPointSample(currentPoints);
       pointFeedback.textContent = `${currentPoints.length} points ready.`;
       pointFeedback.dataset.status = 'valid';
+      pointsInput.setAttribute('aria-invalid', 'false');
       syncPointPreview();
     } catch (error) {
       pointFeedback.textContent = error instanceof Error ? error.message : 'Invalid point data.';
       pointFeedback.dataset.status = 'error';
+      pointsInput.setAttribute('aria-invalid', 'true');
     }
   });
 
@@ -712,43 +838,80 @@ export function mountApp(root: HTMLElement): () => void {
 
   imageSelect.addEventListener('change', () => {
     if (imageSelect.value === 'custom') return;
-    void loadSelectedImageSample(imageSelect.value as ImageSampleId)
-      .catch((error: unknown) => updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) }));
+    void loadSelectedImageSample(imageSelect.value as ImageSampleId);
   });
 
   imageFile.addEventListener('change', () => {
     const file = imageFile.files?.[0];
     if (!file) return;
+    invalidateImageResult();
     const generation = ++imageLoadGeneration;
+    imageLoading = true;
+    updateWorkspace({ activity: `Loading ${file.name}…`, error: null });
     void loadImageSource(file, file.name).then((loaded) => {
       if (generation !== imageLoadGeneration) return;
       imageSelect.value = 'custom';
       setImage(loaded.image, file.name, loaded.rgba);
-    }).catch((error: unknown) => updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) }));
+    }).catch((error: unknown) => {
+      if (generation === imageLoadGeneration) updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) });
+    }).finally(() => {
+      if (generation === imageLoadGeneration) {
+        imageLoading = false;
+        updateWorkspace({});
+      }
+    });
   });
 
-  binarize.addEventListener('change', () => syncImagePreview(getWorkspaceState().currentImage));
+  binarize.addEventListener('change', () => {
+    invalidateImageResult();
+    syncImagePreview(getWorkspaceState().currentImage);
+  });
   threshold.addEventListener('input', () => {
     automaticThreshold = false;
+    invalidateImageResult();
     syncImagePreview(getWorkspaceState().currentImage);
   });
   autoThreshold.addEventListener('click', () => {
     automaticThreshold = true;
+    invalidateImageResult();
     syncImagePreview(getWorkspaceState().currentImage);
   });
-  foreground.addEventListener('change', () => syncImagePreview(getWorkspaceState().currentImage));
+  foreground.addEventListener('change', () => {
+    invalidateImageResult();
+    syncImagePreview(getWorkspaceState().currentImage);
+  });
+  filtration.addEventListener('change', invalidateImageResult);
+  downsample.addEventListener('change', invalidateImageResult);
+
+  /** A run that fails reports itself; a request refused before it starts has to be shown here. */
+  const reportFailure = (error: unknown) => {
+    if (isAbortError(error) || getWorkspaceState().status === 'error') return;
+    updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error), activity: 'Computation failed.' });
+  };
+
+  /** Set when the person starts a run; on small screens the result is brought into view once it exists. */
+  let revealOnResult = false;
+
+  const revealResult = () => {
+    if (!window.matchMedia('(max-width: 1120px)').matches) return;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    resultPane.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+  };
 
   simplicialPanel.addEventListener('submit', (event) => {
     event.preventDefault();
+    if (getWorkspaceState().status === 'computing') return;
+    revealOnResult = true;
     try {
       const points = parsePointInput(pointsInput.value);
-      void tdaRuntime.computeSimplicial({
+      const request = validateSimplicialRequest({
         kind: 'simplicial',
         complex: complexSelect.value as ComplexKind,
         points,
         coefficientField: Number(coefficientField.value),
         parameters: readParameters(points),
-      }).catch(() => undefined);
+      });
+      void tdaRuntime.computeSimplicial(request).catch(reportFailure);
     } catch (error) {
       updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error), activity: 'Check the point coordinates and filtration settings.' });
     }
@@ -756,6 +919,8 @@ export function mountApp(root: HTMLElement): () => void {
 
   cubicalPanel.addEventListener('submit', (event) => {
     event.preventDefault();
+    if (getWorkspaceState().status === 'computing' || imageLoading) return;
+    revealOnResult = true;
     void tdaRuntime.computeCubical({
       kind: 'cubical',
       source: 'current',
@@ -764,8 +929,10 @@ export function mountApp(root: HTMLElement): () => void {
       foreground: foreground.value as ForegroundPolarity,
       filtration: filtration.value as CubicalRequest['filtration'],
       downsample: Number(downsample.value) as 1 | 2 | 4,
-    }).catch(() => undefined);
+    }).catch(reportFailure);
   });
+
+  cancelButtons.forEach((button) => button.addEventListener('click', () => tdaRuntime.cancel()));
 
   copyResult.addEventListener('click', () => {
     void navigator.clipboard.writeText(resultJson.textContent ?? '').then(() => {
@@ -777,6 +944,7 @@ export function mountApp(root: HTMLElement): () => void {
   });
 
   let lastSyncedRequest: unknown = null;
+  let previewedImage: ScalarImage | null = null;
 
   const unsubscribe = subscribeWorkspace((state) => {
     if (state.latestRequest && state.latestRequest !== lastSyncedRequest) {
@@ -798,6 +966,11 @@ export function mountApp(root: HTMLElement): () => void {
         setPoints(simplicial.points);
         pointSampleSelect.value = identifyPointSample(simplicial.points);
       } else if (request.kind === 'cubical') {
+        // A new agent request supersedes any older image selection still decoding in the human UI.
+        if (imageLoading) {
+          ++imageLoadGeneration;
+          imageLoading = false;
+        }
         const cubical = state.latestRequest as CubicalRequest;
         setMode('cubical');
         binarize.checked = cubical.binarize ?? true;
@@ -818,22 +991,57 @@ export function mountApp(root: HTMLElement): () => void {
     computeStatus.dataset.status = state.status;
     activity.textContent = state.error ?? state.activity;
     const activeKind = (state.latestRequest as { kind?: string } | null)?.kind;
-    runSimplicial.disabled = state.status === 'computing';
-    runCubical.disabled = state.status === 'computing';
+    const busy = state.status === 'computing';
+    runSimplicial.setAttribute('aria-disabled', String(busy));
+    runCubical.setAttribute('aria-disabled', String(busy || imageLoading));
+    cancelButtons.forEach((button) => { button.hidden = !busy; });
     runSimplicial.textContent = state.status === 'computing' && activeKind === 'simplicial' ? 'Computing…' : 'Compute simplicial persistence';
-    runCubical.textContent = state.status === 'computing' && activeKind === 'cubical' ? 'Computing…' : 'Compute cubical persistence';
-    syncImagePreview(state.currentImage);
-    imageMeta.textContent = `${state.currentImage.name} · ${state.currentImage.width} × ${state.currentImage.height}`;
+    runCubical.textContent = state.status === 'computing' && activeKind === 'cubical' ? 'Computing…' : imageLoading ? 'Loading image…' : 'Compute cubical persistence';
+    if (state.currentImage !== previewedImage) {
+      previewedImage = state.currentImage;
+      syncImagePreview(state.currentImage);
+    }
+    imageMeta.textContent = imageLoading ? 'Loading selected image…' : `${state.currentImage.name} · ${state.currentImage.width} × ${state.currentImage.height}`;
     updateResult(state.latestResult);
+    if (state.status !== 'computing') {
+      // Scrolling at click time targets the layout before the result exists; wait until it is final.
+      if (revealOnResult && state.status !== 'idle') requestAnimationFrame(revealResult);
+      revealOnResult = false;
+    }
   });
+
+  const barcodeKeepsHover = () => barcode.matches(':hover') || barcode.contains(document.activeElement);
+  onPersistenceDiagramHover(diagram, (id) => {
+    if (id === null && barcodeKeepsHover()) return;
+    if (id !== null) cancelPendingDiagramEmphasis(diagram);
+    highlightedPairId = id;
+    setBarcodeHighlight(barcode, id);
+  });
+  const unbindBarcodeHover = bindBarcodeHover(barcode, (id) => {
+    highlightedPairId = id;
+    setBarcodeHighlight(barcode, id);
+    emphasizeDiagramPair(diagram, displayedPairs, id);
+  });
+  const unsubscribeMotion = motion.subscribe((pausedNow) => {
+    pauseMotion.setAttribute('aria-pressed', String(pausedNow));
+    if (pausedNow && filtrationFrame !== null) stopFiltrationAnimation();
+    if (activeSimplicialResult?.visualization.supported) renderFiltrationPosition(showFiltrationPlayhead);
+    else syncPointPreview();
+  });
+  pauseMotion.addEventListener('click', () => motion.toggle());
 
   renderParameters('rips');
   setPoints(currentPoints);
   syncImagePreview(getWorkspaceState().currentImage);
-  void loadSelectedImageSample('donut').catch((error: unknown) => updateWorkspace({ status: 'error', error: error instanceof Error ? error.message : String(error) }));
+  void loadSelectedImageSample('donut', { quiet: true });
 
   return () => {
     stopFiltrationAnimation();
+    cleanupDisclosures();
+    panelAnimation?.cancel();
+    unsubscribeMotion();
+    motion.destroy();
+    unbindBarcodeHover();
     unsubscribe();
     unmountPersistenceDiagram(diagram);
     pointVisualization.unmount();
