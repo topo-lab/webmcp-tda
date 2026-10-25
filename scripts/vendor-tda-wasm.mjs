@@ -5,7 +5,7 @@
 // There is no default source: the shared sibling checkout may hold an older build, and the vendored copy changes
 // only when someone runs this on purpose. The script follows topolab-site's scripts/copy-wasm.mjs. It refuses a
 // source that is not a clean git checkout of @topolab/tda-wasm 0.3.x built in release mode, stages the package root
-// (the ES modules index.js imports, their types, tda.mjs and tda.wasm, and the licence notices; the .js and .d.ts
+// (the ES modules index.js imports, among them the wasm-bindgen glue, their types, tda.wasm and the licence notices; the .js and .d.ts
 // files without their sourceMappingURL line, since the maps and src/ stay behind), refuses any staged file that
 // contains a local path, loads the staged module and checks that its version() is the manifest's 0.3.x and that it
 // computes a known diagram, writes ENGINE.json (version, commit, build_info.json, each file's size and SHA-256), and
@@ -18,7 +18,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { findLocalPath } from './local-paths.mjs';
 
 const SUPPORTED = /^0\.3\.\d+$/;
-const NOTICES = ['LICENSE', 'THIRD_PARTY_LICENSES.md', 'third_party/geogram_delaunay/LICENSE'];
+const NOTICES = ['LICENSE', 'THIRD_PARTY_LICENSES.md'];
 /** Relative module specifiers in `from '…'`, `import '…'` and `import('…')`. */
 const RELATIVE_IMPORT = /(?:\bfrom\s*|\bimport\s*\(?\s*)['"](\.{1,2}\/[^'"]+)['"]/g;
 /** The `//# sourceMappingURL=…` line tsc ends each module and declaration file with. */
@@ -53,7 +53,6 @@ function packageFiles(source, entries) {
     if (seen.has(file)) continue;
     if (!existsSync(join(source, file))) refuse(`${file} is missing from the build; run npm run build in the checkout`);
     seen.add(file);
-    // The Emscripten glue imports nothing relative; scanning its minified text would only invite false matches.
     if (!/\.(js|d\.ts)$/.test(file)) continue;
     for (const [, specifier] of readFileSync(join(source, file), 'utf8').matchAll(RELATIVE_IMPORT)) {
       let target = posix.normalize(posix.join(posix.dirname(file), specifier));
@@ -82,7 +81,10 @@ async function main() {
   const wasm = manifest.exports?.['./tda.wasm'];
   if (!root?.import || !root?.types || typeof wasm !== 'string') refuse('package.json does not export . and ./tda.wasm as 0.3 does');
   const buildInfo = readJson(join(source, 'dist', 'build_info.json'), 'dist/build_info.json');
-  if (buildInfo.build_mode !== 'release') refuse(`dist/build_info.json says build_mode ${buildInfo.build_mode}; vendor a release build`);
+  // Emscripten builds record build_mode; the wasm-bindgen builds (no C++ since 2026-10-16) are always cargo --release.
+  if (buildInfo.engine !== 'wasm-bindgen' && buildInfo.build_mode !== 'release') {
+    refuse(`dist/build_info.json says build_mode ${buildInfo.build_mode}; vendor a release build`);
+  }
 
   let commit;
   try {
@@ -94,7 +96,7 @@ async function main() {
   if (dirty) refuse(`${source} has uncommitted changes to tracked files, so no commit describes this build`);
 
   const strip = (path) => path.replace(/^\.\//, '');
-  const files = packageFiles(source, [strip(root.import), strip(root.types), strip(wasm), 'dist/tda.mjs']);
+  const files = packageFiles(source, [strip(root.import), strip(root.types), strip(wasm)]);
   for (const notice of NOTICES) if (!existsSync(join(source, notice))) refuse(`${notice} is missing from the checkout`);
 
   mkdirSync(dirname(destination), { recursive: true });
@@ -113,7 +115,7 @@ async function main() {
       const leaked = findLocalPath(readFileSync(join(stage, file)));
       if (leaked) refuse(`${file} contains the local path ${leaked}; rebuild with the path remapping of scripts/build_ph.sh`);
     }
-    // The package root only: ./mapper and ./ladder are not vendored, so their exports are left out.
+    // The package root only: ./ladder and ./experimental are not vendored, so their exports are left out.
     const vendored = {
       name: manifest.name,
       version: manifest.version,

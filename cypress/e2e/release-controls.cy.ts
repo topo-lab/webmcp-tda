@@ -100,14 +100,13 @@ describe("Release controls — full workbench input matrix", () => {
     cy.visit("/");
     cy.get("#credits")
       .should("contain", "@topolab/tda-wasm")
-      .and("contain", "Geogram")
       .and("contain", "tda-viz-react")
+      .and("not.contain", "Geogram")
       .and("contain", "Willis Lam")
       .and("contain", "CC BY-SA 2.0");
     const expected: Record<string, string> = {
       "licenses/tda-wasm/LICENSE.txt": "MIT License",
-      "licenses/tda-wasm/THIRD_PARTY_LICENSES.txt": "Geogram",
-      "licenses/geogram/LICENSE.txt": "Redistribution and use in source and binary forms",
+      "licenses/tda-wasm/THIRD_PARTY_LICENSES.txt": "wasm-bindgen",
       "licenses/tda-viz-react/LICENSE.txt": "MIT License",
     };
     cy.get('#credits a[href^="licenses/"]').should("have.length", Object.keys(expected).length).each((link) => {

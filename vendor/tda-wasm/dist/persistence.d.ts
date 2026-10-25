@@ -211,6 +211,16 @@ export type ZigzagOp = InsertOp | RemoveOp;
 export declare function insertOp(cell: number, boundary: number[], dim: number, value?: number): InsertOp;
 /** Remove cell `cell`, at `value` if given. */
 export declare function removeOp(cell: number, value?: number): RemoveOp;
+/** Packed zigzag operations, without one JavaScript object per operation.
+ * Each record is `[kind, cell, dim, value, boundaryLength, ...boundary]`.
+ * `kind` is 0 for insertion, 1 for removal; removals use dim=0 and no boundary.
+ * Set withValues when the value column supplies the monotone operation values.
+ * The engine validates the same cell-complex and value rules as object input.
+ */
+export interface PackedZigzag {
+    records: Float64Array;
+    withValues?: boolean;
+}
 /** Options of {@link zigzagPersistence}. */
 export interface ZigzagPersistenceOptions {
     /**
@@ -266,7 +276,7 @@ export interface ZigzagPersistence {
  * non-decreasing or all non-increasing) and not NaN; either every operation
  * has a value or none has.
  */
-export declare function zigzagPersistence(ops: ZigzagOp[], opts?: ZigzagPersistenceOptions): ZigzagPersistence;
+export declare function zigzagPersistence(ops: ZigzagOp[] | PackedZigzag, opts?: ZigzagPersistenceOptions): ZigzagPersistence;
 /**
  * Volume-optimal cycles as typed arrays (`materialize()` builds the
  * objects). Result `r` is the pair `(births[r], deaths[r])` of `H_dim`; its
@@ -310,8 +320,8 @@ export interface VolumeOptimalCyclesOptions {
 }
 /**
  * Experimental: volume-optimal cycles of `H_dim`, by the merge-tree /
- * Alexander-duality method of Obayashi (2018, arXiv:1712.05103, §5;
- * clean-room, no HomCloud code). Meaningful for triangulations of convex
+ * Alexander-duality method of Obayashi (2018, arXiv:1712.05103, §5).
+ * Meaningful for triangulations of convex
  * domains in R^(dim + 1), such as alpha complexes. With `pair`, the cycle of
  * that one finite pair (or the pair echoed with `found[0] === 0`); without,
  * every finite pair's (longer than `minPersistence`), sorted by birth then

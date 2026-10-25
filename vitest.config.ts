@@ -4,8 +4,8 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
-    // Keep generated Emscripten glue in its native ESM scope. Vite's SSR
-    // transform otherwise injects a CommonJS `module` into Geogram's hook.
+    // Load the vendored engine and its wasm-bindgen glue as native ES modules,
+    // so `import.meta.url` resolves tda.wasm next to them.
     server: { deps: { external: [/\/vendor\/tda-wasm\//] } },
     coverage: {
       provider: 'v8',

@@ -5,15 +5,16 @@ import type { Diagram } from './types.js';
  * pairs of `H_k` with `birth <= t < death`, an essential class (death
  * `Infinity`) counted at every `t >= birth`, `t = Infinity` included: the
  * rank of `H_k` of the complex of the simplices valued `<= t`. One entry per
- * dimension of the diagram. Pure TypeScript: no need to {@link load} the
- * module.
+ * dimension of the diagram. Computed by the Rust core
+ * (rust/tda-core/src/representations/betti.rs), by binary search in each
+ * dimension's sorted births and finite deaths.
  */
 export declare function bettiNumbers(diagram: Diagram, t: number): Uint32Array;
 /**
  * The Betti curves on `grid` (any order, no NaN): `curves[k][i]` is
  * `bettiNumbers(diagram, grid[i])[k]`. One curve per dimension of the
- * diagram, by binary search in the sorted births and deaths. Pure
- * TypeScript: no need to {@link load} the module.
+ * diagram, by binary search in the sorted births and deaths (the Rust core,
+ * as {@link bettiNumbers}).
  */
 export declare function bettiCurve(diagram: Diagram, grid: Vec): Uint32Array[];
 /** Options of {@link persistenceLandscape}. */
@@ -29,8 +30,9 @@ export interface PersistenceLandscapeOptions {
  * the finite pairs, counted with multiplicity (0 when fewer than k pairs hold
  * `t` strictly inside). Essential pairs carry no tent. Returns `layers`
  * arrays, `landscape[k − 1][i] = λ_k(grid[i])`. Each value is one tent
- * evaluated as `min(t − birth, death − t)` (src/geom/landscape.hpp), so the
- * result does not depend on how the work is ordered.
+ * evaluated as `min(t − birth, death − t)` (the Rust core,
+ * rust/tda-core/src/representations/landscape.rs), so the result does not
+ * depend on how the work is ordered.
  */
 export declare function persistenceLandscape(pairs: Vec, opts: PersistenceLandscapeOptions): Float64Array[];
 /** The region of the (birth, persistence) plane a persistence image covers. */
@@ -63,7 +65,9 @@ export interface PersistenceImage {
  * The persistence image of one dimension's pairs (Adams et al., JMLR 18,
  * 2017): each finite pair with `death > birth` adds `persistence^weightPower`
  * times a Gaussian of standard deviation `sigma` centred at
- * `(birth, persistence)`, evaluated at the pixel centres. The result is a
+ * `(birth, persistence)`, evaluated at the pixel centres (the Rust core,
+ * rust/tda-core/src/representations/image.rs; each pixel's terms are added
+ * in the order of the pairs, as the C++ it replaced did). The result is a
  * {@link Grid}-shaped image (it can be fed to {@link cubicalPersistence}).
  */
 export declare function persistenceImage(pairs: Vec, opts: PersistenceImageOptions): PersistenceImage;
@@ -82,6 +86,9 @@ export interface DiagramMatching {
     matching: Int32Array;
 }
 /**
+ * Dense finite-point costs are limited to 16,777,216 entries (128 MiB);
+ * larger requests throw `RangeError` before allocation.
+ *
  * The exact Wasserstein distance of order `order` between two persistence
  * diagrams of one homology dimension, each a flat `[birth, death, …]`
  * array. Essential points (`death = Infinity`) are matched among their own

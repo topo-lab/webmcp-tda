@@ -12,9 +12,6 @@ let serial = 0;
 const pending = new Map<string, (reply: WorkerResponseMessage) => void>();
 
 beforeAll(async () => {
-  // Browser workers have no CommonJS `module`; Node test runners can install
-  // that global and spuriously activate Geogram's Node-filesystem hook.
-  vi.stubGlobal('module', undefined);
   vi.stubGlobal('self', {
     addEventListener: (type: string, callback: typeof listener) => {
       if (type === 'message') listener = callback;

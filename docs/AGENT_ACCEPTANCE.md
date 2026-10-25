@@ -18,7 +18,7 @@ Run this checklist against a top-level page in a browser that exposes real WebMC
 
 | Complex | Parameters | Unit-square finite H1 pair (`birth`, `death`) |
 | --- | --- | --- |
-| `rips` | `{"maxEdgeLength":1.5,"maxSimplexDimension":2}` | `(1, sqrt(2))` in distance |
+| `rips` | `{"maxEdgeLength":1.5,"maxSimplexDimension":2}` | `(1, sqrt(2))` in edge length |
 | `alpha` | `{"maxSimplexDimension":2}` | `(0.25, 0.5)` in squared radius |
 | `cech` | `{"maxRadius":1,"maxSimplexDimension":2}` | `(0.5, sqrt(0.5))` in radius |
 

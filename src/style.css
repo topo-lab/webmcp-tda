@@ -322,6 +322,6 @@ footer .credits { max-width: 100%; }
 footer .credits p { max-width: 110ch; line-height: 1.7; }
 footer > a { color: inherit; min-height: 44px; display: inline-flex; align-items: center; }
 footer > span { display: inline-flex; align-items: center; min-height: 44px; }
-html[data-motion="paused"] button, html[data-motion="paused"] summary { transition: none; }
+html[data-motion="paused"] button, html[data-motion="paused"] summary, html[data-motion="paused"] summary::after { transition: none; }
 @media (pointer: coarse) { .mode-tab, .point-tools button, .secondary-action, .threshold-auto, .motion-toggle { min-height: 44px; } input[type="range"] { min-height: 32px; } }
 @media (prefers-reduced-motion: reduce) { button:not(:disabled):active { transform: none; } }

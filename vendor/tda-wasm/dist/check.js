@@ -178,7 +178,17 @@ export function minPersistence(v) {
     }
     return v;
 }
-/** An integer in `[min, max]` (a count or a dimension; `max` at most `2^31 - 1`, an embind `int`). */
+/** The `flatTolerance` option: a finite non-negative number, or `undefined` (off). */
+export function flatTolerance(v) {
+    if (v === undefined)
+        return undefined;
+    num(v, 'flatTolerance');
+    if (!Number.isFinite(v) || !(v >= 0)) {
+        throw new RangeError(`flatTolerance must be a finite non-negative number, got ${v}`);
+    }
+    return v;
+}
+/** An integer in `[min, max]` (a count or a dimension; `max` at most `2^31 - 1`, the module's 32-bit `int` arguments). */
 export function int(v, name, min, max = 0x7fffffff) {
     return u32(v, name, min, max);
 }

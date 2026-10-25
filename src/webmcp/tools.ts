@@ -46,7 +46,7 @@ const parametersSchema = objectSchema({
     type: 'number',
     exclusiveMinimum: 0,
     maximum: MAX_LINEAR_SCALE,
-    description: 'Rips limit in distance units. Default: the diameter of the cloud.',
+    description: 'Rips limit as an edge length. Default: the diameter of the cloud.',
   },
   maxRadius: {
     type: 'number',
@@ -132,12 +132,12 @@ export function createWebMcpTools(runtime: TdaRuntime = tdaRuntime): WebMcpTool[
     {
       name: 'tda_compute_simplicial_persistence',
       title: 'Compute simplicial persistence',
-      description: 'Compute persistent homology of a 2D or 3D point cloud with a Vietoris–Rips, Alpha or Čech complex in a local Web Worker. The cloud and result also appear in the visible workbench. Birth and death are in distance (Rips), squared radius (Alpha) or radius (Čech). Omitted Rips and Čech limits default to the cloud diameter. Returns counts, long-lived features and the strongest pairs.',
+      description: 'Compute persistent homology of a 2D or 3D point cloud with a Vietoris–Rips, alpha or Čech complex in a local Web Worker. The cloud and result also appear in the visible workbench. Birth and death are edge lengths (Rips), squared radii (alpha) or radii (Čech). Omitted Rips and Čech limits default to the cloud diameter. Returns counts, long-lived features and the strongest pairs.',
       inputSchema: objectSchema({
         complex: {
           type: 'string',
           enum: ['rips', 'alpha', 'cech'],
-          description: 'Complex family: Vietoris–Rips, Alpha, or Čech.',
+          description: 'Complex family: Vietoris–Rips, alpha or Čech.',
         },
         points: {
           type: 'array',
@@ -173,7 +173,7 @@ export function createWebMcpTools(runtime: TdaRuntime = tdaRuntime): WebMcpTool[
       description: 'Compute 2D cubical persistence of an image: denoise, threshold to a binary mask, close small holes, then a vertex lower-star filtration over F2. The source is the current uploaded image, a built-in sample or row-major values. Omit threshold for Otsu. Runs locally; the input and result appear in the visible workbench. Returns counts, long-lived features and the strongest pairs.',
       inputSchema: objectSchema({
         source: { type: 'string', enum: [...IMAGE_SOURCES], default: 'current', description: 'Image source. "current" is the image shown in the workbench.' },
-        sample: { type: 'string', enum: [...IMAGE_SAMPLE_IDS], description: 'A bundled real photograph. Use with source "sample".' },
+        sample: { type: 'string', enum: [...IMAGE_SAMPLE_IDS], description: 'A bundled photograph. Use with source "sample".' },
         width: { type: 'integer', minimum: 2, maximum: MAX_IMAGE_SIDE, description: 'Image width in pixels. Use with source "values".' },
         height: { type: 'integer', minimum: 2, maximum: MAX_IMAGE_SIDE, description: 'Image height in pixels. Use with source "values".' },
         values: {

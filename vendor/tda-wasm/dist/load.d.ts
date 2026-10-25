@@ -1,7 +1,15 @@
 import type { LoadSource } from './source.js';
 export type { LoadSource };
-/** The Emscripten module: embind functions, called through {@link call}. */
+/** The module's exports (rust/tda-wasm): called through {@link call}. */
 type Engine = any;
+/**
+ * Owners of experimental native handles; ordinary calls retain no state. A
+ * cleanup gets `trapped = true` when the instance trapped: it must then
+ * drop its handle without calling into the instance.
+ */
+type Cleanup = (trapped: boolean) => void;
+/** @internal Register a native owner's cleanup, returning its unregister function. */
+export declare function onUnload(cleanup: Cleanup): () => void;
 /**
  * Load the module. Without `source` it is read from `tda.wasm` next to the
  * package's code (`@topolab/tda-wasm/tda.wasm`): from the file in Node, by
@@ -27,10 +35,5 @@ export declare function isLoaded(): boolean;
 export declare function version(): string;
 /** @internal The loaded module; throws when none is. */
 export declare function module(): Engine;
-/**
- * @internal Run `f` on the loaded module. A C++ exception it throws becomes
- * a `RangeError` (`std::invalid_argument`, `std::domain_error`: an argument
- * the engine refused) or an `Error` (anything else: a size limit, an engine
- * failure) carrying the engine's message.
- */
+/** @internal Every engine export handles traps and recovery in its generated glue. */
 export declare function call<T>(f: (m: Engine) => T): T;

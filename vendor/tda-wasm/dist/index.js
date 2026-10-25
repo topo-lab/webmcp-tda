@@ -1,6 +1,6 @@
 /**
- * `@topolab/tda-wasm`: topological data analysis on WebAssembly (C++ and a
- * Rust core). Call {@link load} once; the functions are then plain calls.
+ * `@topolab/tda-wasm`: topological data analysis on WebAssembly (a Rust
+ * core). Call {@link load} once; the functions are then plain calls.
  *
  * Point clouds are `{ coords, d }` (row-major `Float64Array`, `d`
  * coordinates per point; {@link pointCloud} converts rows), images and

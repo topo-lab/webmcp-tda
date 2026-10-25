@@ -6,7 +6,7 @@
 import { call, module } from './load.js';
 import { allFinite, boolOption, noNaN, numbers, finite, int, intOption, kind, nonNegative, num, options, points, positive, sized, u32 } from './check.js';
 import { diagramOf } from './diagram_of.js';
-import { coeff as checkCoeff, minPersistence as checkMinPersistence } from './check.js';
+import { coeff as checkCoeff, flatTolerance as checkFlatTolerance, minPersistence as checkMinPersistence } from './check.js';
 /** A builder's typed arrays as a {@link Complex} on `scale`. */
 function complexOf(raw, scale) {
     return { vertices: raw.vertices, offsets: raw.offsets, filtrations: raw.filtrations, scale };
@@ -102,9 +102,11 @@ export function ripsComplex(points_, opts) {
  * `maxSimplexDim`, valued by that radius (exact geometry; scale
  * `'radius'`). It grows combinatorially; {@link cechPersistence} computes
  * its diagram from the far smaller Delaunay–Čech complex for points in
- * dimension 1 to 3. Where the input's ties are not exact in double precision
- * a face can come out one ulp above a coface, which {@link persistence}
- * refuses (WASM_HONESTY.md, row "Čech: filtration monotonicity").
+ * dimension 1 to 3. The output is a filtration {@link persistence} accepts:
+ * where the input's ties are not exact in double precision, rounding can put
+ * a face a few ulps above a coface, and the builder raises such a coface to
+ * its faces' values (a face is never lowered; WASM_HONESTY.md, row "Čech:
+ * filtration monotonicity").
  */
 export function cechComplex(points_, opts) {
     module();
@@ -120,8 +122,8 @@ export function cechComplex(points_, opts) {
  * built and reduced in one call. For points in dimension 1 to 3 it is
  * computed on the Delaunay–Čech complex, whose diagram is the Čech
  * complex's (Bauer and Edelsbrunner, Trans. AMS 2017), and `complex: true`
- * returns that complex; above dimension 3 on the full Čech complex, each
- * face lowered to its smallest coface first (see {@link cechComplex}).
+ * returns that complex; above dimension 3 on the full Čech complex, whose
+ * values are monotone as built (see {@link cechComplex}).
  * Homology up to `maxSimplexDim`; in that top dimension a truncated full
  * Čech complex has classes only the truncation creates, the Delaunay–Čech
  * complex none once `maxSimplexDim` reaches the point dimension.
@@ -136,15 +138,23 @@ export function cechPersistence(points_, opts) {
     const { coords, d } = points_;
     return call((m) => persistenceOf(m.cechPipeline(coords, d, maxRadius, cap, f.coeff, f.complex), 'radius', f, cap, f.complex, (raw) => complexOf(raw, 'radius')));
 }
+/** The engine's `flattenedRank` / `flattenedMaxDistance`, or nothing. */
+function flattenedOf(raw) {
+    return raw.flattenedRank === undefined ? {} : { flattened: { rank: raw.flattenedRank, maxDistance: raw.flattenedMaxDistance } };
+}
+/** The engine's "off" for `flatTolerance` (NaN). */
+function tolerance(v) {
+    return v === undefined ? NaN : v;
+}
 /**
  * The Delaunay–Čech complex of points in dimension 1, 2 or 3: every face of
  * the Delaunay triangulation, valued by the radius of the smallest ball
  * enclosing its vertices (for a simplex of both complexes the value
  * {@link cechComplex} gives it, bit for bit; scale `'radius'`). Its diagram
  * is the Čech complex's, from a far smaller complex. Repeated points keep
- * their first copy. Cospherical points are triangulated by Geogram's exact
- * predicates with symbolic perturbation and a fixed insertion order, so the
- * complex is a pure function of the input.
+ * their first copy. Cospherical points are triangulated by exact predicates
+ * with a symbolic perturbation of fixed priority, so the complex is a pure
+ * function of the input.
  */
 export function delaunayCechComplex(points_, opts) {
     module();
@@ -152,8 +162,12 @@ export function delaunayCechComplex(points_, opts) {
     points(points_, 'points', { dims: [1, 2, 3] });
     const maxRadius = positive(o.maxRadius, 'maxRadius');
     const cap = maxSimplexDim(o.maxSimplexDim, 3);
+    const flat = tolerance(checkFlatTolerance(o.flatTolerance));
     const { coords, d } = points_;
-    return call((m) => complexOf(m.delaunayCechComplexFlat(coords, d, maxRadius, cap), 'radius'));
+    return call((m) => {
+        const raw = m.delaunayCechComplexFlat(coords, d, maxRadius, cap, flat);
+        return { ...complexOf(raw, 'radius'), ...flattenedOf(raw) };
+    });
 }
 /** `[x, y, z, weight] * n` for the engine, after the checks of the alpha functions. */
 function alphaArgs(points_, o) {
@@ -169,6 +183,7 @@ function alphaArgs(points_, o) {
     }
     // Non-positive is the engine's "no cutoff": an omitted or infinite one.
     const max = o.maxSquaredRadius === undefined ? Infinity : positive(o.maxSquaredRadius, 'maxSquaredRadius');
+    const flat = tolerance(checkFlatTolerance(o.flatTolerance));
     const coords = new Float64Array(4 * n);
     for (let i = 0; i < n; i++) {
         coords[4 * i] = points_.coords[3 * i];
@@ -176,28 +191,38 @@ function alphaArgs(points_, o) {
         coords[4 * i + 2] = points_.coords[3 * i + 2];
         coords[4 * i + 3] = weights === null ? 0 : weights[i];
     }
-    return { coords, cutoff: Number.isFinite(max) ? max : 0 };
+    return { coords, cutoff: Number.isFinite(max) ? max : 0, flat };
 }
 /**
- * The (weighted) alpha complex of points in three dimensions, over Geogram's
- * regular triangulation: values are squared radii (scale `'squaredRadius'`),
- * a vertex at minus its weight. Without a cutoff, near-degenerate input can
+ * The (weighted) alpha complex of points in three dimensions, over their
+ * exact regular triangulation: values are squared radii (scale `'squaredRadius'`),
+ * a vertex at minus its weight. Of the points at one position the heaviest
+ * is the vertex (the smallest index on a tie); the others are hidden, as are
+ * points whose power cell is empty. Without a cutoff, near-degenerate input can
  * end with astronomically large values for the last tetrahedra, genuine
  * values but rarely wanted; the filtration is monotone, so a cutoff leaves a
  * closed complex.
  */
 export function alphaComplex(points_, opts) {
     module();
-    const { coords, cutoff } = alphaArgs(points_, options(opts, 'opts'));
-    return call((m) => complexOf(m.weightedAlphaComplexFlat(coords, cutoff), 'squaredRadius'));
+    const { coords, cutoff, flat } = alphaArgs(points_, options(opts, 'opts'));
+    return call((m) => {
+        const raw = m.weightedAlphaComplexFlat(coords, cutoff, flat);
+        return { ...complexOf(raw, 'squaredRadius'), ...flattenedOf(raw) };
+    });
 }
 /** The persistence of {@link alphaComplex}, built and reduced in one call: homology up to dimension 3. */
 export function alphaPersistence(points_, opts) {
     module();
     const o = options(opts, 'opts');
-    const { coords, cutoff } = alphaArgs(points_, o);
+    const { coords, cutoff, flat } = alphaArgs(points_, o);
     const f = fused(o);
-    return call((m) => persistenceOf(m.weightedAlphaPipeline(coords, cutoff, f.coeff, f.complex), 'squaredRadius', f, 3, f.complex, (raw) => complexOf(raw, 'squaredRadius')));
+    return call((m) => {
+        const raw = m.weightedAlphaPipeline(coords, cutoff, f.coeff, f.complex, flat);
+        const flattened = flattenedOf(raw);
+        const p = persistenceOf(raw, 'squaredRadius', f, 3, f.complex, (r) => ({ ...complexOf(r, 'squaredRadius'), ...flattened }));
+        return { ...p, ...flattened };
+    });
 }
 /**
  * The coupled alpha complex of a planar two-colour point cloud: the nerve of
@@ -214,8 +239,9 @@ export function alphaPersistence(points_, opts) {
  *
  * Bounded by design: at most 24 points and simplices up to dimension 3,
  * each birth found by enumerating every candidate minimizer of a planar
- * convex problem in long double. Dimension 3 holds the whole nerve for
- * generic input; dimension 2 suffices for H0, H1 and their inclusion maps.
+ * convex problem in IEEE binary128 (quadruple precision, in software).
+ * Dimension 3 holds the whole nerve for generic input; dimension 2
+ * suffices for H0, H1 and their inclusion maps.
  * Cell membership uses a relative tolerance of 1e-12 after the input is
  * translated and scaled to unit size.
  *
@@ -346,40 +372,27 @@ export function ellipsoids(points_, opts) {
     module();
     const { neighbors, ratio } = ellipsoidArgs(points_, options(opts, 'opts'));
     const { coords, d } = points_;
-    return call((m) => {
-        const input = new m.VectorDouble();
-        let flat = null;
-        try {
-            for (let i = 0; i < coords.length; i++)
-                input.push_back(coords[i]);
-            flat = m.computeEllipsoidGeometry(input, d, neighbors, ratio);
-            const stride = 2 * d + d * d;
-            const out = [];
-            for (let i = 0; i < flat.size() / stride; i++) {
-                let at = i * stride;
-                const center = [];
-                for (let c = 0; c < d; c++)
-                    center.push(flat.get(at++));
-                const frame = [];
-                for (let a = 0; a < d; a++) {
-                    const row = [];
-                    for (let c = 0; c < d; c++)
-                        row.push(flat.get(at++));
-                    frame.push(row);
-                }
-                const semiAxes = [];
-                for (let c = 0; c < d; c++)
-                    semiAxes.push(flat.get(at++));
-                out.push({ center, frame, semiAxes });
-            }
-            return out;
+    const flat = call((m) => m.computeEllipsoidGeometry(coords, d, neighbors, ratio));
+    const stride = 2 * d + d * d;
+    const out = [];
+    for (let i = 0; i < flat.length / stride; i++) {
+        let at = i * stride;
+        const center = [];
+        for (let c = 0; c < d; c++)
+            center.push(flat[at++]);
+        const frame = [];
+        for (let a = 0; a < d; a++) {
+            const row = [];
+            for (let c = 0; c < d; c++)
+                row.push(flat[at++]);
+            frame.push(row);
         }
-        finally {
-            input.delete();
-            if (flat)
-                flat.delete();
-        }
-    });
+        const semiAxes = [];
+        for (let c = 0; c < d; c++)
+            semiAxes.push(flat[at++]);
+        out.push({ center, frame, semiAxes });
+    }
+    return out;
 }
 /**
  * The Rips-type ellipsoid complex of points in two or three dimensions
@@ -465,42 +478,25 @@ export function wings(points_, opts) {
     module();
     const { q, theta, normals } = wingArgs(points_, options(opts, 'opts'));
     const coords = points_.coords;
-    return call((m) => {
-        const input = new m.VectorDouble();
-        const normalsIn = new m.VectorDouble();
-        let flat = null;
-        try {
-            for (let i = 0; i < coords.length; i++)
-                input.push_back(coords[i]);
-            for (let i = 0; i < normals.length; i++)
-                normalsIn.push_back(normals[i]);
-            flat = m.computeWingGeometry(input, q, theta, normalsIn);
-            const stride = 19;
-            const out = [];
-            for (let i = 0; i < flat.size() / stride; i++) {
-                let at = i * stride;
-                const point = [flat.get(at++), flat.get(at++)];
-                const normal = [flat.get(at++), flat.get(at++)];
-                const code = flat.get(at++);
-                const normalSource = WING_NORMAL_SOURCES[code];
-                if (normalSource === undefined)
-                    throw new Error(`unknown normal provenance code ${code}`);
-                const curvatureRadius = flat.get(at++);
-                const neighborhoodScale = flat.get(at++);
-                const outline = [];
-                for (let v = 0; v < 6; v++)
-                    outline.push([flat.get(at++), flat.get(at++)]);
-                out.push({ point, normal, normalSource, curvatureRadius, neighborhoodScale, outline });
-            }
-            return out;
-        }
-        finally {
-            input.delete();
-            normalsIn.delete();
-            if (flat)
-                flat.delete();
-        }
-    });
+    const flat = call((m) => m.computeWingGeometry(coords, q, theta, normals));
+    const stride = 19;
+    const out = [];
+    for (let i = 0; i < flat.length / stride; i++) {
+        let at = i * stride;
+        const point = [flat[at++], flat[at++]];
+        const normal = [flat[at++], flat[at++]];
+        const code = flat[at++];
+        const normalSource = WING_NORMAL_SOURCES[code];
+        if (normalSource === undefined)
+            throw new Error(`unknown normal provenance code ${code}`);
+        const curvatureRadius = flat[at++];
+        const neighborhoodScale = flat[at++];
+        const outline = [];
+        for (let v = 0; v < 6; v++)
+            outline.push([flat[at++], flat[at++]]);
+        out.push({ point, normal, normalSource, curvatureRadius, neighborhoodScale, outline });
+    }
+    return out;
 }
 /**
  * The curvature-adaptive wing complex of a planar point cloud, a flag

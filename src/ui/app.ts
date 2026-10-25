@@ -30,7 +30,7 @@ export const WORKBENCH_COMPLEX_KINDS = [...COMPLEX_KINDS];
 const WEB_MCP_STATUS_LABELS: Record<WebMcpStatus, string> = {
   registering: 'WebMCP checking',
   ready: 'WebMCP ready',
-  unsupported: 'WebMCP Unavailable in this browser',
+  unsupported: 'WebMCP unavailable in this browser',
   error: 'WebMCP error',
 };
 
@@ -339,8 +339,8 @@ export function mountApp(root: HTMLElement): () => void {
     </main>
 
     <footer>
-      <span>WebMCP TDA</span><a href="https://topolab.app/">TopoLab</a>
-      <details class="credits"><summary>Credits and licences</summary><p id="credits">Credits and licences: persistence is computed by @topolab/tda-wasm (MIT, <a href="licenses/tda-wasm/LICENSE.txt">licence</a>, <a href="licenses/tda-wasm/THIRD_PARTY_LICENSES.txt">third-party notices</a>), which includes Geogram's Delaunay code (BSD-3-Clause, <a href="licenses/geogram/LICENSE.txt">licence</a>); point clouds are drawn with tda-viz-react (MIT, <a href="licenses/tda-viz-react/LICENSE.txt">licence</a>). Pretzel photo by Willis Lam, <a href="https://creativecommons.org/licenses/by-sa/2.0/" rel="license noopener" target="_blank">CC BY-SA 2.0</a>; eyeglasses photo by Batholith, public domain; both via <a href="https://commons.wikimedia.org/" rel="noopener" target="_blank">Wikimedia Commons</a>.</p></details>
+      <span>WebMCP TDA</span><a href="https://topolab.ai/">topolab</a>
+      <details class="credits"><summary>Credits and licences</summary><p id="credits">Credits and licences: persistence is computed by @topolab/tda-wasm (MIT, <a href="licenses/tda-wasm/LICENSE.txt">licence</a>, <a href="licenses/tda-wasm/THIRD_PARTY_LICENSES.txt">third-party notices</a>); point clouds are drawn with tda-viz-react (MIT, <a href="licenses/tda-viz-react/LICENSE.txt">licence</a>). Pretzel photo by Willis Lam, <a href="https://creativecommons.org/licenses/by-sa/2.0/" rel="license noopener" target="_blank">CC BY-SA 2.0</a>; eyeglasses photo by Batholith, public domain; both via <a href="https://commons.wikimedia.org/" rel="noopener" target="_blank">Wikimedia Commons</a>.</p></details>
     </footer>
   `;
 
@@ -626,7 +626,7 @@ export function mountApp(root: HTMLElement): () => void {
       return `<label>${field.label}${control}<small>${field.help}</small></label>`;
     }).join('');
     const capability = CAPABILITIES.simplicialComplexes.find((entry) => entry.id === kind)!;
-    complexNote.innerHTML = `<strong>${capability.filtrationUnits}</strong> · ${capability.note}`;
+    complexNote.innerHTML = `<strong>${capability.filtrationUnits}</strong> · ${capability.note}${capability.status === 'experimental' ? ' Experimental in tda-wasm 0.3.' : ''}`;
   };
 
   const applyParameterValues = (parameters: ComplexParameters = {}) => {

@@ -37,9 +37,11 @@ export interface CechComplexOptions {
  * `maxSimplexDim`, valued by that radius (exact geometry; scale
  * `'radius'`). It grows combinatorially; {@link cechPersistence} computes
  * its diagram from the far smaller Delaunay–Čech complex for points in
- * dimension 1 to 3. Where the input's ties are not exact in double precision
- * a face can come out one ulp above a coface, which {@link persistence}
- * refuses (WASM_HONESTY.md, row "Čech: filtration monotonicity").
+ * dimension 1 to 3. The output is a filtration {@link persistence} accepts:
+ * where the input's ties are not exact in double precision, rounding can put
+ * a face a few ulps above a coface, and the builder raises such a coface to
+ * its faces' values (a face is never lowered; WASM_HONESTY.md, row "Čech:
+ * filtration monotonicity").
  */
 export declare function cechComplex(points_: PointCloud, opts: CechComplexOptions): Complex;
 /** Options of {@link cechPersistence}. */
@@ -50,19 +52,49 @@ export interface CechPersistenceOptions extends CechComplexOptions, BuilderPersi
  * built and reduced in one call. For points in dimension 1 to 3 it is
  * computed on the Delaunay–Čech complex, whose diagram is the Čech
  * complex's (Bauer and Edelsbrunner, Trans. AMS 2017), and `complex: true`
- * returns that complex; above dimension 3 on the full Čech complex, each
- * face lowered to its smallest coface first (see {@link cechComplex}).
+ * returns that complex; above dimension 3 on the full Čech complex, whose
+ * values are monotone as built (see {@link cechComplex}).
  * Homology up to `maxSimplexDim`; in that top dimension a truncated full
  * Čech complex has classes only the truncation creates, the Delaunay–Čech
  * complex none once `maxSimplexDim` reaches the point dimension.
  */
 export declare function cechPersistence(points_: PointCloud, opts: CechPersistenceOptions): BuilderPersistence;
+/**
+ * What `flatTolerance` did to a cloud: it was projected onto its
+ * least-squares line (`rank` 1) or plane (`rank` 2), and no point moved
+ * farther than `maxDistance` (input units, computed in double).
+ */
+export interface Flattened {
+    /** The dimension of the line (1) or plane (2) the points were projected onto. */
+    rank: 1 | 2;
+    /** The largest distance a point moved. */
+    maxDistance: number;
+}
+/** The complex of {@link alphaComplex} or {@link delaunayCechComplex}. */
+export interface FlattenableComplex extends Complex {
+    /** Present only when `flatTolerance` flattened the input: the complex is then that of the projected points. */
+    flattened?: Flattened;
+}
+/** The result of {@link alphaPersistence}. */
+export interface AlphaPersistence extends BuilderPersistence<FlattenableComplex> {
+    /** Present only when `flatTolerance` flattened the input. */
+    flattened?: Flattened;
+}
 /** Options of {@link delaunayCechComplex}. */
 export interface DelaunayCechComplexOptions {
     /** Largest enclosing-ball radius kept, positive (`Infinity` keeps the whole triangulation). Required. */
     maxRadius: number;
     /** Largest simplex dimension, a non-negative integer. Default 3 (the triangulation has none above the point dimension). */
     maxSimplexDim?: number;
+    /**
+     * Opt-in flattening, a finite number `>= 0`; default off. A cloud in 2 or
+     * 3 dimensions of full exact affine rank whose least-squares line (tried
+     * first) or plane moves no point farther than `flatTolerance` times its
+     * extent (the largest distance from the centroid) is projected onto it,
+     * and the result is the exact Delaunay–Čech complex of the projected
+     * points, with `flattened`. Exactly flat input is never changed.
+     */
+    flatTolerance?: number;
 }
 /**
  * The Delaunay–Čech complex of points in dimension 1, 2 or 3: every face of
@@ -70,11 +102,11 @@ export interface DelaunayCechComplexOptions {
  * enclosing its vertices (for a simplex of both complexes the value
  * {@link cechComplex} gives it, bit for bit; scale `'radius'`). Its diagram
  * is the Čech complex's, from a far smaller complex. Repeated points keep
- * their first copy. Cospherical points are triangulated by Geogram's exact
- * predicates with symbolic perturbation and a fixed insertion order, so the
- * complex is a pure function of the input.
+ * their first copy. Cospherical points are triangulated by exact predicates
+ * with a symbolic perturbation of fixed priority, so the complex is a pure
+ * function of the input.
  */
-export declare function delaunayCechComplex(points_: PointCloud, opts: DelaunayCechComplexOptions): Complex;
+export declare function delaunayCechComplex(points_: PointCloud, opts: DelaunayCechComplexOptions): FlattenableComplex;
 /** Options of {@link alphaComplex}. */
 export interface AlphaComplexOptions {
     /**
@@ -85,21 +117,32 @@ export interface AlphaComplexOptions {
     weights?: Float64Array | number[];
     /** Drop the simplices valued above this squared radius, positive (`Infinity` keeps all). Default `Infinity`. */
     maxSquaredRadius?: number;
+    /**
+     * Opt-in flattening, a finite number `>= 0`; default off. A cloud of full
+     * exact affine rank whose least-squares line (tried first) or plane moves
+     * no point farther than `flatTolerance` times its extent (the largest
+     * distance from the centroid) is projected onto it, and the result is the
+     * exact (weighted) alpha complex of the projected points, weights
+     * unchanged, with `flattened`. Exactly flat input is never changed.
+     */
+    flatTolerance?: number;
 }
 /**
- * The (weighted) alpha complex of points in three dimensions, over Geogram's
- * regular triangulation: values are squared radii (scale `'squaredRadius'`),
- * a vertex at minus its weight. Without a cutoff, near-degenerate input can
+ * The (weighted) alpha complex of points in three dimensions, over their
+ * exact regular triangulation: values are squared radii (scale `'squaredRadius'`),
+ * a vertex at minus its weight. Of the points at one position the heaviest
+ * is the vertex (the smallest index on a tie); the others are hidden, as are
+ * points whose power cell is empty. Without a cutoff, near-degenerate input can
  * end with astronomically large values for the last tetrahedra, genuine
  * values but rarely wanted; the filtration is monotone, so a cutoff leaves a
  * closed complex.
  */
-export declare function alphaComplex(points_: PointCloud, opts?: AlphaComplexOptions): Complex;
+export declare function alphaComplex(points_: PointCloud, opts?: AlphaComplexOptions): FlattenableComplex;
 /** Options of {@link alphaPersistence}. */
 export interface AlphaPersistenceOptions extends AlphaComplexOptions, BuilderPersistenceOptions {
 }
 /** The persistence of {@link alphaComplex}, built and reduced in one call: homology up to dimension 3. */
-export declare function alphaPersistence(points_: PointCloud, opts?: AlphaPersistenceOptions): BuilderPersistence;
+export declare function alphaPersistence(points_: PointCloud, opts?: AlphaPersistenceOptions): AlphaPersistence;
 /** Options of {@link coupledAlphaComplex}. */
 export interface CoupledAlphaComplexOptions {
     /** One colour per point: 0 for a survivor, 1 for a deleted point. Required. */
@@ -124,8 +167,9 @@ export interface CoupledAlphaComplexOptions {
  *
  * Bounded by design: at most 24 points and simplices up to dimension 3,
  * each birth found by enumerating every candidate minimizer of a planar
- * convex problem in long double. Dimension 3 holds the whole nerve for
- * generic input; dimension 2 suffices for H0, H1 and their inclusion maps.
+ * convex problem in IEEE binary128 (quadruple precision, in software).
+ * Dimension 3 holds the whole nerve for generic input; dimension 2
+ * suffices for H0, H1 and their inclusion maps.
  * Cell membership uses a relative tolerance of 1e-12 after the input is
  * translated and scaled to unit size.
  *
@@ -172,11 +216,8 @@ export interface KFoldCoverDiagnostics {
     topRhomboids: number;
     /**
      * Mosaic cells (vertices included) whose squared radius came out as
-     * `Infinity` because it exceeded `squaredRadiusBound`, counted over all
-     * radii, cells a cutoff removed included. Near-degenerate quadruples on
-     * lattice-like input have genuine but astronomically large circumspheres
-     * whose double value carries no usable digits; beyond the bound the k-fold
-     * cover is already one contractible blob, so no feature is lost.
+     * `Infinity` from overflow or dependent support, counted over all radii,
+     * including cells removed by a cutoff. Finite radii are never clipped.
      */
     clampedCells: number;
     /** Orientation tests that needed exact arithmetic to decide their sign. */
@@ -191,7 +232,7 @@ export interface KFoldCoverDiagnostics {
      * throws rather than run the exact path.
      */
     usedExactFallback: boolean;
-    /** 4 · (bounding-box diagonal)². */
+    /** Historical clipping threshold, 4 · (bounding-box diagonal)²; informational only. */
     squaredRadiusBound: number;
 }
 /**

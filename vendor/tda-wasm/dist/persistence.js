@@ -6,10 +6,32 @@
 import { call, module } from './load.js';
 import { coeff as checkCoeff, finite, int, kind, minPersistence as checkMinPersistence, nonNegative, num, oneOf, options, points } from './check.js';
 import { distanceMatrix, gridArgs, isMatrix } from './complex.js';
-import { diagramOf, isLong, keepEntries, keepRows, longPairs } from './diagram_of.js';
+import { diagramOf } from './diagram_of.js';
 const SCALES = ['edgeLength', 'radius', 'squaredRadius', 'squaredRelaxation', 'epsilon', 'growthRadius', 'value'];
 const INT32_MIN = -2147483648;
 const INT32_MAX = 2147483647;
+// The object form already holds an operation object and often a boundary
+// array per record. Limit its additional packed copy to a conservative 1 GiB.
+// PackedZigzag accepts the same records without this second JS structure.
+const ZIGZAG_OBJECT_CONVERSION_BUDGET = 1_073_741_824;
+function refuseZigzagObjectConversion(operations) {
+    const status = module().__oom_status();
+    const memoryBytes = status.memory.buffer.byteLength;
+    const declaredMaxBytes = status.limitBytes;
+    const requestedBytes = operations * 5 * Float64Array.BYTES_PER_ELEMENT;
+    const details = {
+        function: 'zigzagPersistence', phase: 'input-conversion', requestedBytes,
+        inUseBytes: null, memoryBytes, committedBytes: memoryBytes,
+        limitBytes: ZIGZAG_OBJECT_CONVERSION_BUDGET, declaredMaxBytes,
+        allocationLimitBytes: Math.min(declaredMaxBytes, 2_147_483_647),
+        hostConversionBudgetBytes: ZIGZAG_OBJECT_CONVERSION_BUDGET,
+        input: { operations }, parameters: {},
+        estimateMethod: 'The request is a lower bound of five Float64 fields per operation. Boundaries add fields. The 1 GiB conversion budget is a conservative policy, not a measured JavaScript heap ceiling or a whole-input fit estimate.'
+    };
+    const error = new RangeError(`zigzagPersistence: input too large while building JavaScript records; at least ${requestedBytes} bytes requested by ${operations} operations, above the ${ZIGZAG_OBJECT_CONVERSION_BUDGET} byte object-conversion budget. Pass packed Float64Array records to avoid the extra copy.`);
+    Object.assign(error, { code: 'TOO_LARGE', details });
+    throw error;
+}
 /**
  * A complex argument as the typed arrays the engine reads: typed arrays of
  * the right kind pass through, plain arrays (or other typed arrays) are
@@ -120,11 +142,14 @@ function representativeRequest(v, maxDim) {
 }
 /**
  * The engine's representatives as {@link RipsRepresentatives} against the
- * per-dimension diagram, without the pairs `minPersistence` leaves out and
- * their representatives.
+ * per-dimension diagram. The engine has already left out the pairs
+ * `minPersistence` leaves out, with their representatives
+ * (rust/tda-core/src/min_persistence.rs); here each representative's pair
+ * index into the flat list becomes (dimension, index within the dimension),
+ * the layout {@link diagramOf} gives the pairs.
  */
-function representativesOf(raw, kindOf, minPersistence) {
-    const { flat, kept } = longPairs(raw.pairs, minPersistence);
+function representativesOf(raw, kindOf) {
+    const flat = raw.pairs;
     const m = flat.length / 3;
     const within = new Uint32Array(m);
     const seen = [];
@@ -134,17 +159,7 @@ function representativesOf(raw, kindOf, minPersistence) {
             seen.push(0);
         within[p] = seen[k]++;
     }
-    let index = raw.pairIndex;
-    let simplexOffsets = raw.simplexOffsets;
-    let vertexOffsets = raw.vertexOffsets;
-    let vertices = raw.vertices;
-    let coefficients = raw.coefficients;
-    if (kept !== null) {
-        const keep = Array.from(index, (p) => kept[p] >= 0);
-        ({ offsets: simplexOffsets, values: coefficients } = keepRows(simplexOffsets, coefficients, keep));
-        ({ offsets: vertexOffsets, values: vertices } = keepRows(vertexOffsets, vertices, keep));
-        index = Uint32Array.from(keepEntries(index, keep), (p) => kept[p]);
-    }
+    const index = raw.pairIndex;
     const count = index.length;
     const dims = new Uint8Array(count);
     const pairIndex = new Uint32Array(count);
@@ -165,10 +180,10 @@ function representativesOf(raw, kindOf, minPersistence) {
             pairIndex,
             births,
             deaths,
-            simplexOffsets,
-            vertexOffsets,
-            vertices,
-            coefficients
+            simplexOffsets: raw.simplexOffsets,
+            vertexOffsets: raw.vertexOffsets,
+            vertices: raw.vertices,
+            coefficients: raw.coefficients
         }
     };
 }
@@ -212,9 +227,9 @@ export function ripsPersistence(points_, opts) {
         }
         const kindCode = request.kind === 'cocycles' ? 1 : 0;
         const raw = matrix
-            ? m.ripsRepresentativesFromDistanceMatrixFlat(...head, maxDim, maxEdgeLength, coeff, kindCode, request.mask)
-            : m.ripsRepresentativesFlat(...head, maxDim, maxEdgeLength, coeff, kindCode, request.mask);
-        const { diagram, reps } = representativesOf(raw, request.kind, minPersistence);
+            ? m.ripsRepresentativesFromDistanceMatrixFlat(...head, maxDim, maxEdgeLength, coeff, kindCode, request.mask, minPersistence)
+            : m.ripsRepresentativesFlat(...head, maxDim, maxEdgeLength, coeff, kindCode, request.mask, minPersistence);
+        const { diagram, reps } = representativesOf(raw, request.kind);
         return { ...diagramOf(diagram, maxDim, 'edgeLength', coeff), representatives: reps };
     });
 }
@@ -273,50 +288,87 @@ export function removeOp(cell, value) {
 export function zigzagPersistence(ops, opts) {
     module();
     const o = options(opts, 'opts');
-    if (!Array.isArray(ops))
-        throw new TypeError(`ops must be an array of operations, got ${kind(ops)}`);
-    if (ops.length === 0)
-        throw new RangeError('ops must hold at least one operation');
-    let length = 0;
-    let valued = 0;
     let top = -1;
-    ops.forEach((op, i) => {
-        if (op === null || typeof op !== 'object')
-            throw new TypeError(`ops[${i}] must be an operation, got ${kind(op)}`);
-        oneOf(op.type, `ops[${i}].type`, ['insert', 'remove']);
-        int(op.cell, `ops[${i}].cell`, INT32_MIN, INT32_MAX);
-        if (op.value !== undefined) {
-            num(op.value, `ops[${i}].value`);
-            valued++;
+    let records;
+    let withValues;
+    if (Array.isArray(ops)) {
+        if (ops.length * 5 * Float64Array.BYTES_PER_ELEMENT > ZIGZAG_OBJECT_CONVERSION_BUDGET)
+            refuseZigzagObjectConversion(ops.length);
+        if (ops.length === 0)
+            throw new RangeError('ops must hold at least one operation');
+        let length = 0;
+        let valued = 0;
+        ops.forEach((op, i) => {
+            if (op === null || typeof op !== 'object')
+                throw new TypeError(`ops[${i}] must be an operation, got ${kind(op)}`);
+            // Build parameter paths only on refusal, preserving the existing checks
+            // and messages without allocating a string for every valid cell/face.
+            const type = op.type;
+            if (type !== 'insert' && type !== 'remove')
+                oneOf(type, `ops[${i}].type`, ['insert', 'remove']);
+            if (!Number.isInteger(op.cell) || op.cell < INT32_MIN || op.cell > INT32_MAX)
+                int(op.cell, `ops[${i}].cell`, INT32_MIN, INT32_MAX);
+            if (op.value !== undefined) {
+                if (typeof op.value !== 'number')
+                    num(op.value, `ops[${i}].value`);
+                valued++;
+            }
+            if (op.type === 'insert') {
+                if (!Array.isArray(op.boundary))
+                    throw new TypeError(`ops[${i}].boundary must be an array of cell ids, got ${kind(op.boundary)}`);
+                op.boundary.forEach((id, j) => {
+                    if (!Number.isInteger(id) || id < INT32_MIN || id > INT32_MAX)
+                        int(id, `ops[${i}].boundary[${j}]`, INT32_MIN, INT32_MAX);
+                });
+                if (!Number.isSafeInteger(op.dim) || op.dim < 0 || op.dim > INT32_MAX)
+                    int(op.dim, `ops[${i}].dim`, 0);
+                top = Math.max(top, op.dim);
+                length += 5 + op.boundary.length;
+            }
+            else {
+                length += 5;
+            }
+        });
+        if (valued !== 0 && valued !== ops.length) {
+            const missing = ops.findIndex((op) => op.value === undefined);
+            throw new RangeError(`ops[${missing}].value is missing: give every operation a value, or none`);
         }
-        if (op.type === 'insert') {
-            if (!Array.isArray(op.boundary))
-                throw new TypeError(`ops[${i}].boundary must be an array of cell ids, got ${kind(op.boundary)}`);
-            op.boundary.forEach((id, j) => int(id, `ops[${i}].boundary[${j}]`, INT32_MIN, INT32_MAX));
-            top = Math.max(top, int(op.dim, `ops[${i}].dim`, 0));
-            length += 5 + op.boundary.length;
+        records = new Float64Array(length);
+        let at = 0;
+        for (const op of ops) {
+            records[at++] = op.type === 'insert' ? 0 : 1;
+            records[at++] = op.cell;
+            records[at++] = op.type === 'insert' ? op.dim : 0;
+            records[at++] = op.value ?? 0;
+            const boundary = op.type === 'insert' ? op.boundary : [];
+            records[at++] = boundary.length;
+            for (const id of boundary)
+                records[at++] = id;
         }
-        else {
-            length += 5;
-        }
-    });
-    if (valued !== 0 && valued !== ops.length) {
-        const missing = ops.findIndex((op) => op.value === undefined);
-        throw new RangeError(`ops[${missing}].value is missing: give every operation a value, or none`);
+        withValues = valued === ops.length;
     }
-    const records = new Float64Array(length);
-    let at = 0;
-    for (const op of ops) {
-        records[at++] = op.type === 'insert' ? 0 : 1;
-        records[at++] = op.cell;
-        records[at++] = op.type === 'insert' ? op.dim : 0;
-        records[at++] = op.value ?? 0;
-        const boundary = op.type === 'insert' ? op.boundary : [];
-        records[at++] = boundary.length;
-        for (const id of boundary)
-            records[at++] = id;
+    else {
+        if (ops === null || typeof ops !== 'object' || !(ops.records instanceof Float64Array)) {
+            throw new TypeError(`ops must be an array of operations, got ${kind(ops)}`);
+        }
+        if (ops.withValues !== undefined && typeof ops.withValues !== 'boolean')
+            throw new TypeError('withValues must be a boolean');
+        records = ops.records;
+        withValues = ops.withValues ?? false;
+        // Discover the output's dimensions in constant heap space. The engine
+        // checks the record contents and operation semantics; reject incomplete
+        // headers/counts here so this scan never skips outside the typed array.
+        for (let at = 0; at < records.length;) {
+            if (records.length - at < 5)
+                throw new RangeError('truncated zigzag record header');
+            const count = records[at + 4];
+            if (!Number.isSafeInteger(count) || count < 0 || count > records.length - at - 5)
+                throw new RangeError('invalid zigzag boundary length');
+            if (records[at] === 0)
+                top = Math.max(top, records[at + 2]);
+            at += 5 + count;
+        }
     }
-    const withValues = valued === ops.length;
     const minPersistence = checkMinPersistence(o.minPersistence);
     return call((m) => {
         const raw = m.zigzagPersistenceFlat(records, withValues);
@@ -331,47 +383,31 @@ export function zigzagPersistence(ops, opts) {
         return result;
     });
 }
-/** The engine's cycles, without those of the pairs `minPersistence` leaves out. */
-function cyclesOf(raw, minPersistence = 0) {
-    if (minPersistence > 0) {
-        const births = raw.births;
-        const keep = Array.from(births, (b, r) => isLong(b, raw.deaths[r], minPersistence));
-        if (keep.includes(false)) {
-            const dim = raw.dimension;
-            const volume = keepRows(raw.volumeOffsets, raw.volumeVertices, keep, dim + 2);
-            const boundary = keepRows(raw.boundaryOffsets, raw.boundaryVertices, keep, dim + 1);
-            const cycle = keepRows(raw.cycleVertexOffsets, raw.cycleVertices, keep);
-            raw = {
-                dimension: dim,
-                births: keepEntries(births, keep),
-                deaths: keepEntries(raw.deaths, keep),
-                found: keepEntries(raw.found, keep),
-                volumeOffsets: volume.offsets,
-                volumeVertices: volume.values,
-                boundaryOffsets: boundary.offsets,
-                boundaryVertices: boundary.values,
-                cycleVertexOffsets: cycle.offsets,
-                cycleVertices: cycle.values
-            };
-        }
-    }
-    return {
-        dim: raw.dimension,
-        births: raw.births,
-        deaths: raw.deaths,
-        found: raw.found,
-        volumeOffsets: raw.volumeOffsets,
-        volumeVertices: raw.volumeVertices,
-        boundaryOffsets: raw.boundaryOffsets,
-        boundaryVertices: raw.boundaryVertices,
-        cycleVertexOffsets: raw.cycleVertexOffsets,
-        cycleVertices: raw.cycleVertices
-    };
+/**
+ * The engine's one array (`volumeOptimalCyclesFlat`, rust/tda-wasm/src/api.rs) cut into the typed
+ * arrays of {@link VolumeOptimalCycles}: `[count, volume rows, boundary
+ * rows, cycle vertices]`, then births, deaths, found, and the three CSR
+ * lists, each offsets then ids.
+ */
+function cyclesOf(out, dim) {
+    const [count, volumeRows, boundaryRows, cycleLength] = [out[0], out[1], out[2], out[3]];
+    let at = 4;
+    const take = (length) => out.subarray(at, (at += length));
+    const births = take(count).slice();
+    const deaths = take(count).slice();
+    const found = Uint8Array.from(take(count));
+    const volumeOffsets = Uint32Array.from(take(count + 1));
+    const volumeVertices = Int32Array.from(take(volumeRows * (dim + 2)));
+    const boundaryOffsets = Uint32Array.from(take(count + 1));
+    const boundaryVertices = Int32Array.from(take(boundaryRows * (dim + 1)));
+    const cycleVertexOffsets = Uint32Array.from(take(count + 1));
+    const cycleVertices = Int32Array.from(take(cycleLength));
+    return { dim, births, deaths, found, volumeOffsets, volumeVertices, boundaryOffsets, boundaryVertices, cycleVertexOffsets, cycleVertices };
 }
 /**
  * Experimental: volume-optimal cycles of `H_dim`, by the merge-tree /
- * Alexander-duality method of Obayashi (2018, arXiv:1712.05103, §5;
- * clean-room, no HomCloud code). Meaningful for triangulations of convex
+ * Alexander-duality method of Obayashi (2018, arXiv:1712.05103, §5).
+ * Meaningful for triangulations of convex
  * domains in R^(dim + 1), such as alpha complexes. With `pair`, the cycle of
  * that one finite pair (or the pair echoed with `found[0] === 0`); without,
  * every finite pair's (longer than `minPersistence`), sorted by birth then
@@ -392,23 +428,11 @@ export function volumeOptimalCycles(complex, opts) {
         pair = [finite(o.pair[0], 'pair[0]'), finite(o.pair[1], 'pair[1]')];
     }
     const minPersistence = checkMinPersistence(o.minPersistence);
-    if (c.filtrations.length === 0 && pair === null) {
-        return cyclesOf({
-            dimension: dim,
-            births: new Float64Array(0),
-            deaths: new Float64Array(0),
-            found: new Uint8Array(0),
-            volumeOffsets: Uint32Array.of(0),
-            volumeVertices: new Int32Array(0),
-            boundaryOffsets: Uint32Array.of(0),
-            boundaryVertices: new Int32Array(0),
-            cycleVertexOffsets: Uint32Array.of(0),
-            cycleVertices: new Int32Array(0)
-        });
-    }
+    if (c.filtrations.length === 0 && pair === null)
+        return cyclesOf(Float64Array.of(0, 0, 0, 0, 0, 0, 0), dim);
     if (c.filtrations.length === 0)
         throw new RangeError('complex must hold at least one simplex to find the cycle of a pair');
-    return call((m) => cyclesOf(pair === null
-        ? m.volumeOptimalCyclesFlat(c.vertices, c.offsets, c.filtrations, dim + 1)
-        : m.volumeOptimalCycleFlat(c.vertices, c.offsets, c.filtrations, dim + 1, pair[0], pair[1]), pair === null ? minPersistence : 0));
+    const [birth, death] = pair ?? [0, 0];
+    const out = call((m) => m.volumeOptimalCyclesFlat(c.vertices, c.offsets, c.filtrations, dim + 1, pair !== null, birth, death, minPersistence));
+    return cyclesOf(out, dim);
 }

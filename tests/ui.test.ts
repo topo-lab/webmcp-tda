@@ -28,7 +28,7 @@ describe('human point input', () => {
   it('combines the WebMCP name and registration state in one badge label', () => {
     expect(webMcpStatusLabel('registering')).toBe('WebMCP checking');
     expect(webMcpStatusLabel('ready')).toBe('WebMCP ready');
-    expect(webMcpStatusLabel('unsupported')).toBe('WebMCP Unavailable in this browser');
+    expect(webMcpStatusLabel('unsupported')).toBe('WebMCP unavailable in this browser');
     expect(webMcpStatusLabel('error')).toBe('WebMCP error');
   });
 

@@ -9,6 +9,21 @@
  */
 const isNode = typeof process !== 'undefined' && typeof process.versions?.node === 'string';
 /**
+ * Node's `fs/promises`, reached so that no bundler sees a dependency on it:
+ * a literal `import('node:fs/promises')` stops esbuild ("Could not resolve"),
+ * fails webpack 5 (UnhandledSchemeError) and makes Vite warn that the module
+ * was externalized, in every browser bundle of the package, although this
+ * branch only runs in Node. `process.getBuiltinModule` (Node 22.3 and later)
+ * needs no import; the fallback (Node 22.0 to 22.2) builds the specifier at
+ * run time, which bundlers leave alone.
+ */
+async function nodeFs() {
+    const get = process.getBuiltinModule;
+    if (typeof get === 'function')
+        return get.call(process, 'node:fs/promises');
+    return import(/* @vite-ignore */ /* webpackIgnore: true */ ['node', 'fs/promises'].join(':'));
+}
+/**
  * The compiled module from `source`; without one, from `fallback()` (the
  * binary next to the package's code: read from the file in Node, fetched in
  * a browser).
@@ -24,7 +39,7 @@ export async function compileSource(source, fallback) {
     if (isNode && (s instanceof URL || (typeof s === 'string' && s.startsWith('file:')))) {
         const url = s instanceof URL ? s : new URL(s);
         if (url.protocol === 'file:') {
-            const { readFile } = await import('node:fs/promises');
+            const { readFile } = await nodeFs();
             return WebAssembly.compile((await readFile(url)));
         }
     }

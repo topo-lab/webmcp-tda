@@ -46,62 +46,57 @@ function pairCheck(a, name) {
 }
 /** The most values a landscape or an image returns: 2^27 doubles, 1 GiB. */
 const MAX_VALUES = 2 ** 27;
-/** The number of entries of the sorted `xs` that are `<= t`. */
-function upTo(xs, t) {
-    let lo = 0;
-    let hi = xs.length;
-    while (lo < hi) {
-        const mid = (lo + hi) >>> 1;
-        if (xs[mid] <= t)
-            lo = mid + 1;
-        else
-            hi = mid;
-    }
-    return lo;
-}
-/**
- * Each dimension's births and finite deaths, sorted. An essential class
- * (death `Infinity`) has no death to count, so it is alive at every
- * `t >= birth`, `Infinity` included.
- */
-function sortedEnds(pairs) {
-    return pairs.map((p) => {
-        const births = new Float64Array(p.length / 2);
-        const deaths = [];
-        for (let i = 0; i < births.length; i++) {
-            births[i] = p[2 * i];
-            if (p[2 * i + 1] !== Infinity)
-                deaths.push(p[2 * i + 1]);
-        }
-        return { births: births.sort(), deaths: Float64Array.from(deaths).sort() };
+/** A diagram packed as the module takes it: `[m, n_0 … n_(m−1)]`, then the m dimensions' `[birth, death, …]` back to back. */
+function packed(pairs) {
+    const m = pairs.length;
+    let total = 1 + m;
+    for (const p of pairs)
+        total += p.length;
+    const out = new Float64Array(total);
+    out[0] = m;
+    let at = 1 + m;
+    pairs.forEach((p, k) => {
+        out[1 + k] = p.length;
+        out.set(p, at);
+        at += p.length;
     });
+    return out;
+}
+/** `rows` arrays of `length` values each, out of the module's one array (a copy each, so each owns its buffer). */
+function cut(out, rows, length, as) {
+    return Array.from({ length: rows }, (_, k) => as(out.subarray(k * length, (k + 1) * length)));
 }
 /**
  * The Betti numbers at `t`, read off the diagram: entry `k` is the number of
  * pairs of `H_k` with `birth <= t < death`, an essential class (death
  * `Infinity`) counted at every `t >= birth`, `t = Infinity` included: the
  * rank of `H_k` of the complex of the simplices valued `<= t`. One entry per
- * dimension of the diagram. Pure TypeScript: no need to {@link load} the
- * module.
+ * dimension of the diagram. Computed by the Rust core
+ * (rust/tda-core/src/representations/betti.rs), by binary search in each
+ * dimension's sorted births and finite deaths.
  */
 export function bettiNumbers(diagram, t) {
+    module();
     const pairs = perDimension(diagram, 'diagram');
     num(t, 't');
     if (Number.isNaN(t))
         throw new RangeError('t must not be NaN');
-    return Uint32Array.from(sortedEnds(pairs), ({ births, deaths }) => upTo(births, t) - upTo(deaths, t));
+    const out = call((m) => m.bettiNumbersFlat(packed(pairs), t));
+    return Uint32Array.from(out);
 }
 /**
  * The Betti curves on `grid` (any order, no NaN): `curves[k][i]` is
  * `bettiNumbers(diagram, grid[i])[k]`. One curve per dimension of the
- * diagram, by binary search in the sorted births and deaths. Pure
- * TypeScript: no need to {@link load} the module.
+ * diagram, by binary search in the sorted births and deaths (the Rust core,
+ * as {@link bettiNumbers}).
  */
 export function bettiCurve(diagram, grid) {
+    module();
     const pairs = perDimension(diagram, 'diagram');
     const g = numbers(grid, 'grid');
     noNaN(g, 'grid');
-    return sortedEnds(pairs).map(({ births, deaths }) => Uint32Array.from(g, (t) => upTo(births, t) - upTo(deaths, t)));
+    const out = call((m) => m.bettiCurveFlat(packed(pairs), g));
+    return cut(out, pairs.length, g.length, (c) => Uint32Array.from(c));
 }
 /**
  * The persistence landscape of one dimension's pairs `[birth, death, …]`:
@@ -109,8 +104,9 @@ export function bettiCurve(diagram, grid) {
  * the finite pairs, counted with multiplicity (0 when fewer than k pairs hold
  * `t` strictly inside). Essential pairs carry no tent. Returns `layers`
  * arrays, `landscape[k − 1][i] = λ_k(grid[i])`. Each value is one tent
- * evaluated as `min(t − birth, death − t)` (src/geom/landscape.hpp), so the
- * result does not depend on how the work is ordered.
+ * evaluated as `min(t − birth, death − t)` (the Rust core,
+ * rust/tda-core/src/representations/landscape.rs), so the result does not
+ * depend on how the work is ordered.
  */
 export function persistenceLandscape(pairs, opts) {
     module();
@@ -126,24 +122,16 @@ export function persistenceLandscape(pairs, opts) {
     if (layers * grid.length > MAX_VALUES) {
         throw new RangeError(`layers · grid.length must be at most ${MAX_VALUES} values, got ${layers} · ${grid.length}`);
     }
-    const tents = [];
-    for (let i = 0; i < a.length; i += 2) {
-        if (a[i] < a[i + 1] && a[i + 1] !== Infinity)
-            tents.push(a[i], a[i + 1]);
-    }
-    const bd = Float64Array.from(tents);
-    return call((m) => {
-        const out = [];
-        for (let level = 1; level <= layers; level++)
-            out.push(m.persistenceLandscapeFlat(bd, level, grid));
-        return out;
-    });
+    const out = call((m) => m.persistenceLandscapeFlat(a, 1, layers, grid));
+    return layers === 1 ? [out] : cut(out, layers, grid.length, (l) => l.slice());
 }
 /**
  * The persistence image of one dimension's pairs (Adams et al., JMLR 18,
  * 2017): each finite pair with `death > birth` adds `persistence^weightPower`
  * times a Gaussian of standard deviation `sigma` centred at
- * `(birth, persistence)`, evaluated at the pixel centres. The result is a
+ * `(birth, persistence)`, evaluated at the pixel centres (the Rust core,
+ * rust/tda-core/src/representations/image.rs; each pixel's terms are added
+ * in the order of the pairs, as the C++ it replaced did). The result is a
  * {@link Grid}-shaped image (it can be fed to {@link cubicalPersistence}).
  */
 export function persistenceImage(pairs, opts) {
@@ -165,44 +153,23 @@ export function persistenceImage(pairs, opts) {
     }
     if (rows * columns > MAX_VALUES)
         throw new RangeError(`resolution must give at most ${MAX_VALUES} pixels, got ${rows} × ${columns}`);
-    let bounds;
-    if (o.bounds === undefined || o.bounds === 'auto') {
-        let birthMin = Infinity;
-        let birthMax = -Infinity;
-        let persMax = -Infinity;
-        for (let i = 0; i < a.length; i += 2) {
-            if (a[i + 1] === Infinity)
-                continue;
-            const birth = a[i];
-            const pers = a[i + 1] - birth;
-            birthMin = Math.min(birthMin, birth);
-            birthMax = Math.max(birthMax, birth);
-            persMax = Math.max(persMax, pers);
-        }
-        if (birthMin === Infinity) {
+    const auto = o.bounds === undefined || o.bounds === 'auto';
+    let given = { birthMin: 0, birthMax: 0, persMin: 0, persMax: 0 };
+    if (auto) {
+        let finitePair = false;
+        for (let i = 1; i < a.length && !finitePair; i += 2)
+            finitePair = a[i] !== Infinity;
+        if (!finitePair)
             throw new RangeError("bounds 'auto' needs a finite pair; give the bounds for a diagram without one");
-        }
-        const birthRange = birthMax - birthMin;
-        if (birthRange < 1e-10) {
-            const centre = (birthMin + birthMax) / 2;
-            birthMin = centre - 0.5;
-            birthMax = centre + 0.5;
-        }
-        else {
-            birthMin -= birthRange * 0.1;
-            birthMax += birthRange * 0.1;
-        }
-        persMax = persMax < 1e-10 ? 1 : persMax * 1.1;
-        bounds = { birthMin, birthMax, persMin: 0, persMax };
     }
     else if (typeof o.bounds === 'object' && o.bounds !== null) {
-        bounds = {
+        given = {
             birthMin: finite(o.bounds.birthMin, 'bounds.birthMin'),
             birthMax: finite(o.bounds.birthMax, 'bounds.birthMax'),
             persMin: finite(o.bounds.persMin, 'bounds.persMin'),
             persMax: finite(o.bounds.persMax, 'bounds.persMax')
         };
-        if (!(bounds.birthMax > bounds.birthMin) || !(bounds.persMax > bounds.persMin)) {
+        if (!(given.birthMax > given.birthMin) || !(given.persMax > given.persMin)) {
             throw new RangeError('bounds must have birthMax > birthMin and persMax > persMin');
         }
     }
@@ -213,14 +180,19 @@ export function persistenceImage(pairs, opts) {
     if (!(sigma > 0))
         throw new RangeError(`sigma must be positive, got ${sigma}`);
     const weightPower = o.weightPower === undefined ? 1 : finite(o.weightPower, 'weightPower');
-    return call((m) => ({
-        values: m.persistenceImageFlat(a, rows, columns, bounds.birthMin, bounds.birthMax, bounds.persMin, bounds.persMax, sigma, weightPower),
+    // The module returns the bounds it used, then the pixels.
+    const out = call((m) => m.persistenceImageFlat(a, rows, columns, auto, given.birthMin, given.birthMax, given.persMin, given.persMax, sigma, weightPower));
+    return {
+        values: out.slice(4),
         shape: [rows, columns],
-        bounds
-    }));
+        bounds: { birthMin: out[0], birthMax: out[1], persMin: out[2], persMax: out[3] }
+    };
 }
 const unpackMatching = (out) => ({ distance: out[0], matching: Int32Array.from(out.subarray(1)) });
 /**
+ * Dense finite-point costs are limited to 16,777,216 entries (128 MiB);
+ * larger requests throw `RangeError` before allocation.
+ *
  * The exact Wasserstein distance of order `order` between two persistence
  * diagrams of one homology dimension, each a flat `[birth, death, …]`
  * array. Essential points (`death = Infinity`) are matched among their own

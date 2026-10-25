@@ -123,7 +123,7 @@ function lowerFacesToCofaces(complex: Complex): Complex {
 
 /**
  * Pairs no longer than this are floating-point round-off, not features: alpha complexes of cospherical points
- * (the sphere example) leave bars of 1e-18 to 3e-14. Relative to the largest value, so it holds at any scale.
+ * (the sphere example) leave bars below 2e-15 with the vendored build, up to 3e-14 with earlier ones. Relative to the largest value, so it holds at any scale.
  */
 function roundOffFloor(complex: Complex): number {
   let largest = 0;

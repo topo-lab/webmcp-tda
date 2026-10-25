@@ -81,7 +81,7 @@ describe('Agent acceptance through a recorded WebMCP channel', () => {
     call('tda_get_capabilities', {}).then((capabilities) => {
       expect(capabilities.execution).to.equal('browser-local WebAssembly in a Web Worker');
       expect(capabilities.simplicialComplexes.map((c: any) => [c.id, c.filtrationUnits])).to.deep.equal([
-        ['rips', 'distance'], ['alpha', 'squared radius'], ['cech', 'radius'],
+        ['rips', 'edge length'], ['alpha', 'squared radius'], ['cech', 'radius'],
       ]);
       expect(capabilities.defaults.resultLimit).to.equal(10);
     });
@@ -90,7 +90,7 @@ describe('Agent acceptance through a recorded WebMCP channel', () => {
   it('matches the closed-form unit-square loop for Rips, Alpha and Čech, and shows the points in the workbench', () => {
     visitWithAgent();
     const cases = [
-      { complex: 'rips', birth: 1, death: Math.SQRT2, units: 'distance' },
+      { complex: 'rips', birth: 1, death: Math.SQRT2, units: 'edge length' },
       { complex: 'alpha', birth: 0.25, death: 0.5, units: 'squared radius' },
       { complex: 'cech', birth: 0.5, death: Math.SQRT1_2, units: 'radius' },
     ];
@@ -183,7 +183,7 @@ describe('Agent acceptance through a recorded WebMCP channel', () => {
       win.__agent.call('tda_compute_simplicial_persistence', { complex: 'alpha', points: square }),
     ])).then(([first, second]) => {
       expect(first.ok && second.ok, JSON.stringify([first, second])).to.equal(true);
-      expect(first.units).to.equal('distance');
+      expect(first.units).to.equal('edge length');
       expect(second.units).to.equal('squared radius');
       expect(first.shownInWorkspace, 'the older request was replaced').to.equal(false);
       expect(second.shownInWorkspace).to.equal(true);

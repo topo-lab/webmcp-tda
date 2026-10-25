@@ -97,7 +97,7 @@ describe('WebMCP agent contract', () => {
     }, { signal })).resolves.toMatchObject({
       ok: true,
       kind: 'simplicial',
-      units: 'distance',
+      units: 'edge length',
       components: 1,
       loops: 0,
       voids: null,

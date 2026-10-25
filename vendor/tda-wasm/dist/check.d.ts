@@ -64,7 +64,9 @@ export declare const MAX_COEFF = 2147483647;
 export declare function coeff(v: unknown): number;
 /** The `minPersistence` option: a finite non-negative number, default 0. */
 export declare function minPersistence(v: unknown): number;
-/** An integer in `[min, max]` (a count or a dimension; `max` at most `2^31 - 1`, an embind `int`). */
+/** The `flatTolerance` option: a finite non-negative number, or `undefined` (off). */
+export declare function flatTolerance(v: unknown): number | undefined;
+/** An integer in `[min, max]` (a count or a dimension; `max` at most `2^31 - 1`, the module's 32-bit `int` arguments). */
 export declare function int(v: unknown, name: string, min: number, max?: number): number;
 /**
  * A point cloud (`cloud`) whose coordinates are finite, with `d` among

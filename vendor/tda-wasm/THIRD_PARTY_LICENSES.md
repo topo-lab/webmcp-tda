@@ -1,30 +1,40 @@
 # Third-Party Licenses
 
 The WebAssembly binary distributed with this package (`dist/tda.wasm`,
-exported as `@topolab/tda-wasm/tda.wasm`) is compiled from this package's own
-C++ (`src/persistent_cohomology.cpp`, `src/geom/`), the vendored Geogram
-Delaunay PSM (below) and the Rust crates in `rust/`: `rust/tda-core` and
-`rust/tda-core-c`, this package's own code, and `rust/ot-diagram`, the
-diagram-distance code of ot-wasm's `ot-core` (Topolab's own) copied verbatim,
-whose network simplex pivot is derived from LEMON (see "LEMON" and "Rust
-core" below); with Emscripten's runtime libraries and the Rust standard
-library. Nothing else is linked or included: no GUDHI, Boost, Eigen or CGAL
-header is compiled (GUDHI and Boost since 2026-10-05; `scripts/build_ph.sh`
-lists every header the preprocessor reaches and stops on any under `gudhi/` or
-`boost/`). One file of `src/geom/` carries code derived from GUDHI:
-`src/geom/sampling.hpp`, an edited port of GUDHI 3.11.0's
+exported as `@topolab/tda-wasm/tda.wasm`, with its glue
+`dist/pkg/tda_wasm.js`) is compiled from the Rust crates in `rust/`:
+`rust/tda-wasm`, `rust/tda-core` and `rust/musl-math`, this package's own
+code (musl-math a port of musl's MIT code, see "Rust core"), and
+`rust/ot-diagram`, the diagram-distance code of ot-wasm's `ot-core`
+(Topolab's own) copied verbatim, whose network simplex pivot is derived from
+LEMON (see "LEMON" and "Rust core" below); with the wasm-bindgen runtime
+crates and the Rust standard library ("Rust code linked into the shipped WebAssembly modules" below).
+Nothing else is linked or included: no C++ since 2026-10-16 (until then the
+module was compiled by Emscripten from this package's C++,
+historical `src/persistent_cohomology.cpp`, over the same Rust crates, with
+Emscripten's runtime libraries; see "Emscripten"), and no GUDHI, Boost,
+Eigen or CGAL header is compiled (GUDHI and Boost since 2026-10-05). One file of the Rust core carries code derived from GUDHI:
+`rust/tda-core/src/geometry/sampling.rs`, an edited port of GUDHI 3.11.0's
 `choose_n_farthest_points` (MIT; see "GUDHI" below). The package source is
 licensed MIT (see LICENSE). The optional commutative-ladder engine is a second
 binary, `dist/ladder/`.
 
-No CGAL header is compiled, in any path (two pieces of the Geogram PSM come
-from CGAL code; see "Geogram"), and since 2026-10-05 GUDHI is not compiled
-(see below). The weighted (regular) triangulation comes
-from the Geogram Delaunay PSM; the min-enclosing-ball, Čech,
-farthest-point-subsampling, weak-witness, Rips-type-ellipsoid,
-ellipsoidal-Čech, 2D wing-complex and k-fold-cover computations are code in
-`src/geom/` (MIT, part of this package), written for this package except the
-farthest-point subsampling, which is the GUDHI port named above; the Čech
+No CGAL header is compiled, in any path (two pieces of the Geogram PSM,
+vendored until 2026-10-15, came from CGAL code; see "Geogram"), and since
+2026-10-05 GUDHI is not compiled
+(see below). The weighted (regular) triangulations are the Rust core's
+(`rust/tda-core/src/triangulation`, MIT, since 2026-10-15; they follow
+Geogram's conventions, see "Geogram"); the min-enclosing-ball, power-sphere,
+Čech, farthest-point-subsampling, kd-tree and weak-witness computations are
+Rust in `rust/tda-core/src/geometry/` (since 2026-10-15), and so are the
+Rips-type-ellipsoid, ellipsoidal-Čech, 2D wing-complex, box and k-fold cover
+computations (`rust/tda-core/src/{ellipsoid,wing,boxes.rs,kfold}`, since
+2026-10-15) (MIT, part of this package). Their former C++ was kept in
+test/native as the tests' oracle until 2026-10-16 and is on the branch
+`archive/cpp` (tag `archive/cpp-2026-10-16`) since; main keeps the fixtures
+recorded from it. All of it was written
+for this package except the farthest-point subsampling, which is the GUDHI
+port named above; the Čech
 value rule and the witness complex's face check follow designs of GUDHI's
 (see "GUDHI"). The wing complex is written from Weng–Zhao 2026 (CC-BY paper);
 the authors' code was in an unreleased fork as of 2026-08-31, and no
@@ -38,9 +48,10 @@ unlicensed and was not built — see below.
   header carries an Inria line such as "Copyright (C) 2016 Inria"). GUDHI is
   a project of Inria.
 - **Source:** https://gudhi.inria.fr/
-- **Shipped code derived from GUDHI:** `src/geom/sampling.hpp` (in the npm
-  package and compiled into `dist/tda.wasm`), whose
-  `choose_n_farthest_points` is an edited port of GUDHI 3.11.0's
+- **Shipped code derived from GUDHI:** `rust/tda-core/src/geometry/sampling.rs`
+  (compiled into `dist/tda.wasm`; until 2026-10-15 the C++
+  `archive/cpp:test/native/sampling.hpp`, then the native tests' oracle
+  archive/cpp:test/native/sampling.hpp, on the branch `archive/cpp` since 2026-10-16), whose `choose_n_farthest_points` is an edited port of GUDHI 3.11.0's
   `include/gudhi/choose_n_farthest_points.h` (Siargey Kachanovich and Marc
   Glisse, "Copyright (C) 2016 Inria"): the same `dist_to_L` and
   `final_size`, the same opening sequence and the same swap-remove table of
@@ -51,12 +62,12 @@ unlicensed and was not built — see below.
   ported from GUDHI; the designs of GUDHI's that shipped code follows are
   listed next.
 - **Designs followed, code written here:** the value rule of the Čech and
-  Delaunay–Čech builders (`src/geom/cech_complex.hpp`, `detail_cech`) is the
+  Delaunay–Čech builders (`rust/tda-core/src/geometry/cech.rs`) is the
   rule of GUDHI's `assign_MEB_filtration` (`include/gudhi/MEB_filtration.h`):
   a simplex takes the enclosing ball of the first facet whose ball contains
   the omitted vertex, else computes its own; here on this package's own
   enclosing-ball code. The weak witness enumeration
-  (`src/geom/witness_complex.hpp`) is written from the definitions, and its
+  (`rust/tda-core/src/geometry/witness.rs`) is written from the definitions, and its
   `facets_present` keeps the design of GUDHI's `all_faces_in` (every facet
   looked up, the largest facet value kept); it yields the same simplices and
   values as the transcription it replaced, emitted in another order.
@@ -73,11 +84,11 @@ unlicensed and was not built — see below.
 - **Since then** the builders hand their complexes to the Rust core
   (`rust/tda-core/src/complex/`), persistence of every complex, cubical grid
   and raw pair export is this package's reducer
-  (`src/geom/twist_persistence.hpp`, since 2026-10-11 its Rust port
+  (`archive/cpp:test/native/twist_persistence.hpp`, since 2026-10-11 its Rust port
   `rust/tda-core/src/persistence`), zigzag is the FastZigzag conversion
-  (`src/geom/zigzag_fast.hpp`, since 2026-10-11 its Rust port
-  `rust/tda-core/src/zigzag.rs`; the two C++ files are kept in `test/native/`
-  as test oracles and are not in the module), the witness enumeration and the dimension-0
+  (`archive/cpp:test/native/zigzag_fast.hpp`, since 2026-10-11 its Rust port
+  `rust/tda-core/src/zigzag.rs`; the two C++ files were test oracles in
+  test/native until 2026-10-16 and are on the branch `archive/cpp` since), the witness enumeration and the dimension-0
   union-find are written from their definitions, and the cubical lower-star
   transcription was deleted (2026-10-05; a cell's value is now the minimum of
   its top cells in the IEEE total order). Farthest-point subsampling is the
@@ -90,23 +101,25 @@ unlicensed and was not built — see below.
   2^31 − 1, refused with this package's own messages.
 - **Development-time use, not distributed:** Python gudhi 3.12.0 in the
   fixture generators, oracle checks and benchmarks (`scripts/`, `benchmarks/`);
-  GUDHI 3.11.0's C++ headers in three native tests
-  (`test/native/test_tree_persistence.cpp`, `test_alpha_persistence.cpp`,
-  `test_cubical_axes.cpp`), which skip where they are not installed, as in CI.
-  The other repository file derived from GUDHI code, the frozen witness
-  reference `test/native/witness_reference.hpp` (the pre-rewrite builder that
-  `test/native/test_witness_fast.cpp` compares against), carries GUDHI's MIT
-  notice itself and is not in the npm package.
+  GUDHI's C++ headers in three native tests
+  (`archive/cpp:test/native/test_tree_persistence.cpp`, `archive/cpp:test/native/test_alpha_persistence.cpp`,
+  `archive/cpp:test/native/test_cubical_axes.cpp`) until 2026-10-16, when those tests moved to the
+  branch `archive/cpp` and GUDHI's answers on their inputs became recorded
+  fixtures (`rust/tda-core/tests/fixtures/persistence_gudhi/`, recorded with
+  Python gudhi 3.12.0, and `fixtures/alpha_native/gudhi_alpha.tsv`, recorded
+  with the C++ headers). The frozen witness reference
+  `archive/cpp:test/native/witness_reference.hpp` (the pre-rewrite builder, derived from GUDHI code,
+  with GUDHI's MIT notice) went to `archive/cpp` with them; its outputs are
+  recorded in `rust/tda-core/tests/fixtures/geometry_witness/witness_reference.txt`
+  (numbers only, no code).
 - **Boost** (BSL-1.0) came in with GUDHI's headers and left with them; the
   dispatch-only CI job that builds the external rhomboidtiling oracle still
   installs it, outside the package. **Eigen** (MPL-2.0) was on the include
   path without any header being included; it is no longer looked for.
-- This package is independent of the GUDHI project and is not affiliated with
-  or endorsed by the GUDHI team.
 
 GUDHI 3.11.0 `LICENSE`, reproduced in full (it applies to the port in
-`src/geom/sampling.hpp`, whose source header carries "Copyright (C) 2016
-Inria"):
+`rust/tda-core/src/geometry/sampling.rs`, whose source header carries
+"Copyright (C) 2016 Inria"):
 
 ```text
 MIT License
@@ -132,47 +145,81 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Geogram (Delaunay PSM)
+## Geogram (Delaunay PSM) — conventions ported; vendored until 2026-10-15
 
 - **License:** BSD-3-Clause
-- **Source:** https://github.com/BrunoLevy/geogram.psm.Delaunay
-- **Copyright:** the compiled sources (`Delaunay_psm.cpp`, `Delaunay_psm.h`)
+- **Source:** https://github.com/BrunoLevy/geogram.psm.Delaunay (vendored
+  from commit `0bcf18b30d828a6840cf573220f88d2fdcf18631` under `third_party/`
+  until 2026-10-15)
+- **Copyright:** the PSM sources (`Delaunay_psm.cpp`, `Delaunay_psm.h`)
   carry "Copyright (c) 2000-2022 Inria" with a non-endorsement clause naming
-  the ALICE Project-Team, reproduced below; the PSM repository's `LICENSE`
-  file reads "Copyright (c) 2022, Bruno Levy".
-- **Pinned commit:** `0bcf18b30d828a6840cf573220f88d2fdcf18631`
-- **License record:** `third_party/geogram_delaunay/LICENSE` (the PSM
-  repository's licence file) and the notice below (the one in the compiled
-  sources). Both ship with the npm package and the release bundle, as BSD-3
-  requires for the binary.
-- **Components used:** `RegularWeightedDelaunay3d` / `RegularWeightedDelaunay2d`
-  ("BPOW" / "BPOW2d") weighted regular triangulations and the bundled robust
-  predicates, backing the weighted alpha complex.
-- **Local modifications:** three, marked `tda-wasm patch` and listed in
-  `third_party/geogram_delaunay/README.md`: two in the random-number helpers
-  (`GEO::random_shuffle` seeds one engine per thread once;
-  `GEO::Numeric::random_reset()` copies a pristine engine state), and the
-  removal of the `EM_ASM` block in `GEO::initialize()` written to mount the
-  host's working and root directories (NODEFS) under node.js (issue #21).
-- **Code from CGAL:** two pieces of the PSM come from CGAL code whose
-  copyright holder, Inria, is also Geogram's; the PSM carries them under the
-  BSD-3 notice below.
-  - `in_sphere_3d_filter_optim` (`Delaunay_psm.cpp`, lines 19598–19672) is
-    the static filter of CGAL's `Side_of_oriented_sphere_3`, with the same
-    error bound and the same underflow and overflow guards. Upstream
-    Geogram's `predicates.cpp` says it "was optimized by hand by Sylvain
-    Pion"; the PSM leaves that comment out. It is compiled in, but no path of
-    the module calls it: the 3D weighted triangulation ("BPOW") decides with
-    `orient_3dlifted_SOS`, and the k-fold cover's exact fallback with
-    `side4_3d`. Only the native test oracle
-    `kfold_cover_complex_3d_brute_force` reaches it, through
-    `in_sphere_3d_SOS`.
-  - `HilbertSort3d` follows CGAL's `Hilbert_sort_median_3` (the same
-    recursive median split). Geogram credits it, and `HilbertSort2d`, with
-    "The implementation of spatial sort is inspired by the use of
-    std::nth_element() and the recursive template in the spatial sort package
-    of CGAL". The weighted alpha complex uses both: Geogram puts the points in
-    BRIO order with them before inserting.
+  the ALICE Project-Team; the PSM repository's `LICENSE` file reads
+  "Copyright (c) 2022, Bruno Levy". Both notices are reproduced below and
+  ship with the npm package and the release bundle in this file.
+- **What remains of it:** no Geogram code is compiled or shipped. The
+  regular triangulations and exact predicates in
+  `rust/tda-core/src/triangulation` (MIT, new code) replaced, on
+  2026-10-15, the `RegularWeightedDelaunay3d` / `RegularWeightedDelaunay2d`
+  ("BPOW" / "BPOW2d") triangulations and the `PCK` predicates and
+  `expansion_nt` arithmetic the weighted alpha, Delaunay–Čech and k-fold
+  builders used. They reproduce Geogram's conventions on purpose: the BPOW
+  lifting (`t = sqrt(W - w)`, height `((t^2 + x^2) + y^2) + z^2`, in 2D
+  without `z`), the insertion semantics of `Delaunay3d` and `Delaunay2d` in
+  weighted mode (first cell, repeated and hidden sites, the hull-facet rule)
+  and, in 3D and in the k-fold cover's in-sphere test, the Simulation of
+  Simplicity rule of `side4h_3d_exact_SOS` / `side4_3d_exact_SOS` term for
+  term, so the 3D outputs are Geogram's wherever Geogram's were a function
+  of its input. (The 2D tie rule is not Geogram's `side3h_2d_exact_SOS`,
+  which is not a consistent perturbation; see `predicates2.rs`.) Those
+  conventions are Geogram's and are used under the BSD-3 notices below. The
+  exact arithmetic is Shewchuk's (Discrete Comput. Geom. 18, 1997; the
+  algorithms are in the public domain). The data structures, walks and
+  cavity code are written anew.
+- **Its outputs as a test oracle:** before the removal, Geogram's results on
+  1,300 triangulation inputs and about 280,000 predicate signs were recorded
+  (`rust/tda-core/tests/fixtures/triangulation`, checked by
+  `rust/tda-core/tests/triangulation_geogram.rs`).
+- **History:** the PSM was vendored with three local patches (two in its
+  random-number helpers, and the removal of an `EM_ASM` block in
+  `GEO::initialize()` that mounted the host's directories under node.js,
+  issue #21). Two pieces of it came from CGAL code whose copyright holder,
+  Inria, is also Geogram's, under the BSD-3 notice below: the static filter
+  of `in_sphere_3d_filter_optim` (CGAL's `Side_of_oriented_sphere_3`) and
+  `HilbertSort3d` (CGAL's `Hilbert_sort_median_3`). Neither is ported.
+
+The `LICENSE` file of the PSM repository:
+
+```text
+BSD 3-Clause License
+
+Copyright (c) 2022, Bruno Levy
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
 
 The notice at the head of `Delaunay_psm.cpp` and `Delaunay_psm.h`:
 
@@ -318,7 +365,7 @@ the representative-cycle methods. It is gone: the representatives
 and its licence text is no longer reproduced. The Rust core's cycles reduce
 past the pivot ("exhaustive reduction"), the idea of that upstream branch,
 credited in `rust/tda-core/src/rips/reps.rs`; the code was written for this
-package, not ported from `ripser.cpp`. ripser.py is used as a black-box test
+package, not ported from `archive/cpp:benchmarks/cross_language/ripser.cpp`. ripser.py is used as a black-box test
 oracle only (`test/fixtures/rips_representatives/ripser_py.json`).
 
 ## Not vendored: ellipsoid-complex reference implementations
@@ -327,7 +374,7 @@ None of the following ships in the `.wasm` or is redistributed, and no code
 from any of them is in this repository. They are recorded here because they
 were consulted, because two of them are run out of tree to generate
 test-fixture data
-(`test/native/gen_ellipsoid_fixture.py`), because one was evaluated for
+(`rust/tda-core/tests/fixtures/ellipsoid/gen_ellipsoid_fixture.py`), because one was evaluated for
 vendoring and rejected, and because the third could not be used at all — its
 licence position is the reason, and recording that is the point.
 
@@ -346,7 +393,7 @@ licence position is the reason, and recording that is the point.
   root-find over the conic pencil with closed-form recovery of the tangency
   radius — and over 120 random 2D/3D pairs it agrees with our independent
   derivation to **5e-15**, i.e. machine precision. Its licence is compatible and
-  it is commit-pinnable like Geogram.
+  it is commit-pinnable like Geogram was.
 - **Decision: do not vendor.** The reasons are integration cost, not quality:
   1. It is one function of what this builder needs. The ellipsoid fitting, the
      candidate pruning, the certified enclosure, the degenerate-input policy and
@@ -365,10 +412,12 @@ licence position is the reason, and recording that is the point.
      ellphi does not expose.
   5. Keeping it external makes it a better *oracle*: an independent
      implementation we did not write is stronger evidence than the same code
-     linked twice. It is the tight numerical pin in `test/native/test_ellipsoid.cpp`
-     (1.4e-13 relative over 2232 edges).
+     linked twice. It is the tight numerical pin in
+     `rust/tda-core/tests/ellipsoid_cpp_properties.rs` (1.4e-13 relative over
+     2232 edges; in the native `archive/cpp:test/native/test_ellipsoid.cpp` until 2026-10-16).
 - **How it is used:** installed from PyPI into a throwaway virtualenv and called
-  from `test/native/gen_ellipsoid_fixture.py` to record `filtration_c` values.
+  from `rust/tda-core/tests/fixtures/ellipsoid/gen_ellipsoid_fixture.py` to
+  record `filtration_c` values.
   Not a build, test or runtime dependency of this package.
 
 ### a-zeg/ellipsoids — NO LICENCE, oracle data generator only
@@ -378,38 +427,42 @@ licence position is the reason, and recording that is the point.
 - **Repository:** https://github.com/a-zeg/ellipsoids
 - **Pinned commit:** `d19c40cea6856c8434ba9fd98e1da5c1d5c0f217`
 - **What it is:** the reference implementation accompanying arXiv:2408.11450, the
-  paper `src/geom/ellipsoid_complex.hpp` implements.
+  paper the C++ `archive/cpp:test/native/ellipsoid_complex.hpp` (until 2026-10-15 `src/geom/`, then
+  test/native, on the branch `archive/cpp` since 2026-10-16) and its Rust port `rust/tda-core/src/ellipsoid` implement.
 - **How it is used:** only as an external oracle. It is *run* out of tree by
-  `test/native/gen_ellipsoid_fixture.py` to record fixture numbers (the shape
+  `rust/tda-core/tests/fixtures/ellipsoid/gen_ellipsoid_fixture.py` to record fixture numbers (the shape
   matrices `sigma` and the births `filtration_a` in
-  `test/native/ellipsoid_fixture.hpp`); the recorded values are measurements of
+  archive/cpp:test/native/ellipsoid_fixture.hpp until 2026-10-16, since then
+  `rust/tda-core/tests/fixtures/ellipsoid/reference_oracles.txt`); the recorded values are measurements of
   a computation, not its code. Its source was read to match its fitting
   conventions (the neighbourhood counts the point itself, the long axis
   normalized to 1, the `1e-4` floor on the semi-axes, every axis 1 for a
   degenerate neighbourhood, the factor 2 to the Rips scale), so that the
   numbers are comparable.
-  `src/geom/ellipsoid_complex.hpp` is written from the paper, with the paper's
-  propositions cited at each step, and contains no code from this repository.
+  `archive/cpp:test/native/ellipsoid_complex.hpp` is written from the paper, with the paper's
+  propositions cited at each step, and contains no code from this repository;
+  neither does its Rust port, which follows the header operation for operation.
   A test-only helper, `ellipsoid_pair_birth_gh12`, followed its
   `find_intersection_radius` statement by statement; it was deleted on
   2026-10-10, and the test that used it now checks the K-function's sign
   change at the solver's enclosure instead.
 - **Reproducing the fixtures** needs a local clone at that commit; the steps are
-  in the header of `test/native/gen_ellipsoid_fixture.py`. Fixture regeneration
+  in the header of `rust/tda-core/tests/fixtures/ellipsoid/gen_ellipsoid_fixture.py`. Fixture regeneration
   is a maintainer task, not part of `npm test` or CI.
 
 ### shill1729/ellph — NO LICENCE, not built, not consulted for numbers
 
 - **Repository:** https://github.com/shill1729/ellph, the implementation
   referenced by arXiv:2606.01548 for the minimal-intersection-radius computation
-  that `src/geom/ellipsoid_cech.hpp` also computes.
+  that the C++ `archive/cpp:test/native/ellipsoid_cech.hpp` (on the branch `archive/cpp` since 2026-10-16) and its Rust port
+  `rust/tda-core/src/ellipsoid/cech.rs` also compute.
 - **Licence:** none. No LICENSE file; the GitHub licence API returns 404. Its
   dependency list includes **ALGLIB**, which is GPL/commercial dual-licensed and
   must never be vendored here (NFR-1), plus NLopt (LGPL for some algorithms) and
   Boost/Eigen.
 - **Status:** not vendored, not linked, not transcribed, and — unlike
   `a-zeg/ellipsoids` — **not even built or run out of tree**. It contributes no
-  number to any fixture or test. `src/geom/ellipsoid_cech.hpp` was written from
+  number to any fixture or test. `archive/cpp:test/native/ellipsoid_cech.hpp`, and so its Rust port, was written from
   the paper (Sections 2.1 and 2.3: the dual function of Eq. 1, the certificate of
   Eq. 4, Lemmas 2.8-2.11, Theorems 2.12-2.13 and 2.17, Proposition 2.18).
 - **What we used as external checks instead**, precisely because the reference
@@ -417,8 +470,9 @@ licence position is the reason, and recording that is the point.
   (three named ellipses in R^2 with a stated MIR of "approximately 4.87"), which
   is reproduced to 4.870561397481; the reduction to Welzl minimum enclosing balls
   in the isotropic limit, against code already oracled in this repo; and an
-  independent primal verifier written for the purpose in
-  `test/native/test_ellipsoid_cech.cpp`. A published number in a CC-BY paper
+  independent primal verifier written for the purpose (in the native
+  `archive/cpp:test/native/test_ellipsoid_cech.cpp` until 2026-10-16, ported to
+  `rust/tda-core/tests/ellipsoid_cech_cpp_properties.rs`). A published number in a CC-BY paper
   carries no licence obligation on the code that reproduces it.
 - The paper itself is CC BY 4.0, so quoting its statements and constants in
   comments and tests is fine with attribution, which is given at every use.
@@ -426,8 +480,8 @@ licence position is the reason, and recording that is the point.
 ## Not vendored: zigzag persistence reference implementations
 
 `zigzagPersistence` (`rust/tda-core/src/zigzag.rs` since 2026-10-11, a port
-of this package's C++ `src/geom/zigzag_fast.hpp`, now
-`test/native/zigzag_fast.hpp`; until 2026-10-05 the
+of this package's C++ `archive/cpp:test/native/zigzag_fast.hpp`, on the branch `archive/cpp`
+since 2026-10-16; until 2026-10-05 the
 opt-in `*Fast` twins of GUDHI's engine) implements the FastZigzag conversion, written from the paper
 (Dey–Hou) after reading Dionysus 2's `zigzag-cone.h` (BSD-3) as prior art; the
 read-back follows its value convention, and no code is copied. The Rust port
@@ -490,7 +544,7 @@ complex, the box filtration and the volume-optimal cycles.
      ~1058 lines, against 400 lines of our own that fit our types exactly and
      that the whole differential harness can hold to account.
 - **How it was used:** `zigzag-cone.h` was read as prior art before
-  `src/geom/zigzag_fast.hpp` was written from the paper; the read-back
+  `archive/cpp:test/native/zigzag_fast.hpp` was written from the paper; the read-back
   follows its value convention, and no code is copied from it. The
   read-back rule was verified against GUDHI's documented example and a
   Betti-number oracle, and since 2026-10-04 also against the output of
@@ -510,7 +564,7 @@ complex, the box filtration and the volume-optimal cycles.
   line by line into any language. "Academic research use only" and "please do
   not redistribute" are each independently fatal for a product that ships a
   `.wasm`. It may be read; it was not. The *paper* is CC BY 4.0 and is what
-  `src/geom/zigzag_fast.hpp` (now `test/native/zigzag_fast.hpp`) and its
+  `archive/cpp:test/native/zigzag_fast.hpp` (on the branch `archive/cpp` since 2026-10-16) and its
   Rust port `rust/tda-core/src/zigzag.rs` implement.
 
 ### HomCloud, RuCPD, giotto-ph — copyleft, not usable here
@@ -519,22 +573,71 @@ GPL-3.0-or-later, GPL-3.0-or-later (and it submodules FZZ), and AGPL-3.0
 respectively. SPEC.md NFR-1 forbids a copyleft dependency in the WASM build.
 The licence texts and the reasoning are quoted in `docs/ZIGZAG_BACKEND.md` §2.
 
-## Rust crates linked into `dist/ladder/tda_ladder_bg.wasm`
+## Rust code linked into the shipped WebAssembly modules (runtime notice bundle)
 
-The commutative-ladder engine (`ladder/`) is this package's own code (MIT).
-Its core crate `tda-ladder` has no dependencies. The wasm surface
-`tda-ladder-wasm` links, through wasm-bindgen 0.2.128 (versions pinned in
-`ladder/Cargo.lock`):
+This is the complete list of the Rust crates that are compiled into
+`dist/tda.wasm` and `dist/ladder/tda_ladder_bg.wasm`, with the licence of each
+and the notices their licences require. It was made from `cargo tree -e
+normal --target wasm32-unknown-unknown` and `cargo metadata` on
+`rust/Cargo.lock` and `ladder/Cargo.lock`; `test/third_party_notices.test.mjs`
+fails when a crate of that graph, at a version in the lockfile, is missing
+here. The licence texts are in "Notice texts" at the end of this file.
 
-- **wasm-bindgen** 0.2.128, **wasm-bindgen-shared** 0.2.128 — MIT OR
-  Apache-2.0. https://github.com/wasm-bindgen/wasm-bindgen. The generated
-  JavaScript glue `dist/ladder/tda_ladder.js` and `.d.ts` are its output.
-- **once_cell** 1.21.4, **cfg-if** 1.0.5 — MIT OR Apache-2.0.
-- **The Rust standard library** (`core`, `alloc`, `std`) — MIT OR Apache-2.0.
+Where a crate is offered under "MIT OR Apache-2.0", this package takes the MIT
+branch (the Apache-2.0 text is reproduced anyway, below). This does not
+change the licence of this package's own code.
 
-Build-time only (proc macros, not in the `.wasm`): wasm-bindgen-macro,
-wasm-bindgen-macro-support, syn, quote, proc-macro2, unicode-ident, bumpalo,
-rustversion — all MIT OR Apache-2.0 (unicode-ident also Unicode-3.0).
+| Crate | Version | Licence expression (crates.io) | Copyright notice in its sources | In `tda.wasm` | In `tda_ladder_bg.wasm` |
+|---|---|---|---|:-:|:-:|
+| wasm-bindgen | 0.2.129 | MIT OR Apache-2.0 | Copyright (c) 2014 Alex Crichton | yes | yes |
+| wasm-bindgen-shared | 0.2.129 | MIT OR Apache-2.0 | Copyright (c) 2014 Alex Crichton | yes | yes |
+| js-sys | 0.3.106 | MIT OR Apache-2.0 | Copyright (c) 2014 Alex Crichton | yes | no |
+| futures-core, futures-task, futures-util | 0.3.34 | MIT OR Apache-2.0 | Copyright (c) 2016 Alex Crichton; Copyright (c) 2017 The Tokio Authors | yes | no |
+| pin-project-lite | 0.2.17 | Apache-2.0 OR MIT | none in its LICENSE-MIT (author: taiki-e, the crate's repository owner) | yes | no |
+| slab | 0.4.12 | MIT | Copyright (c) 2019 Carl Lerche | yes | no |
+| once_cell | 1.21.4 | MIT OR Apache-2.0 | none in its LICENSE-MIT (author: Aleksey Kladov) | yes | yes |
+| cfg-if | 1.0.5 | MIT OR Apache-2.0 | Copyright (c) 2014 Alex Crichton | yes | yes |
+| unicode-ident | 1.0.26 | (MIT OR Apache-2.0) AND Unicode-3.0 | none in its LICENSE-MIT (author: David Tolnay); Unicode-3.0 part: Copyright (c) 1991-2023 Unicode, Inc. | yes | yes |
+| libm | 0.2.16 | **MIT** | Copyright (c) 2018 Jorge Aparicio; portions of musl libc (Copyright (c) 2005-2020 Rich Felker, et al.), the CORE-MATH project, and the Sun, FreeBSD and Arm notices listed in its file | yes | no |
+| `memory-phase` (this repository, `rust/memory-phase`) | 0.1.0 | own code | Topolab | yes | yes |
+| `musl-math` (this repository, `rust/musl-math`; derived from musl, see "Rust core" below) | 0.1.0 | own code; MIT-licensed musl and Arm optimized-routines parts | see "Rust core" | yes | no |
+| `ot-diagram` (this repository; derived from LEMON, see "LEMON") | 0.1.0 | own code; BSL-1.0 part | see "LEMON" | yes | no |
+| `tda-core`, `tda-wasm` / `tda-ladder`, `tda-ladder-wasm` (this repository) | | own code | Topolab | yes | yes (ladder crates) |
+
+`unicode-ident` is a dependency of `wasm-bindgen-shared`, so it is in the
+dependency graph of both modules. Whether a given function of it survives in
+the optimized `.wasm` was not checked; its notice, including the Unicode-3.0
+permission notice, is included because the crate is compiled.
+
+**The Rust standard library** (`core`, `alloc`, `std`; toolchain 1.98.1,
+target `wasm32-unknown-unknown`) is MIT OR Apache-2.0, "Copyright The Rust
+Project Developers", and is linked into both modules by the compiler. Its
+sources carry notices of their own, which the toolchain publishes in
+`share/doc/rust/COPYRIGHT-library.html`:
+- `core`'s Unicode tables (`library/core/src/unicode`) are under Unicode-3.0,
+  Copyright 1991-2024 Unicode, Inc. (text below);
+- **dlmalloc** 0.2.13 (the allocator of this target; MIT OR Apache-2.0,
+  Alex Crichton, derived from Doug Lea's public-domain `malloc.c`),
+  **hashbrown** (the hash table of `std::collections`; MIT OR Apache-2.0,
+  Amanieu d'Antras) and **compiler_builtins**, with the `libm` port it
+  contains (MIT OR Apache-2.0; derived from musl and from the FreeBSD,
+  Sun and Arm routines named in the libm notice below, and from LLVM
+  compiler-rt, Apache-2.0 WITH LLVM-exception), are compiled into the
+  standard library for this target. The exact list of crates inside the
+  standard library depends on the toolchain release; the file named above
+  is the authority for 1.98.1.
+
+Build-time only, not in either `.wasm` (proc macros and the code generator
+that runs inside `cargo build`): wasm-bindgen-macro,
+wasm-bindgen-macro-support, syn, quote, proc-macro2, bumpalo, rustversion
+(all MIT OR Apache-2.0). The generated JavaScript glue (`dist/pkg/tda_wasm.js`,
+`dist/ladder/tda_ladder.js` and their `.d.ts` files) is wasm-bindgen's output
+(MIT OR Apache-2.0, patched by `scripts/build_wasm.sh`); the crate list above
+therefore covers the JavaScript that ships as well.
+
+The ladder engine (`ladder/`) is this package's own code. `tda-ladder` depends
+only on `memory-phase`, this repository's own allocation-telemetry crate;
+`tda-ladder-wasm` adds wasm-bindgen 0.2.129 and the crates above.
 
 ## Not vendored: commutative ladder reference implementations
 
@@ -551,15 +654,15 @@ this repository. None was installed or run, and no source of any of them was
 read, while `ladder/` was written; of commutazzio, the README and `LICENSE`
 were read for the licence facts above. The engine is written from
 arXiv:2310.03649, arXiv:1404.7588, arXiv:2111.15058 and arXiv:2204.11080 (its
-zigzag conversion is ported from `src/geom/zigzag_fast.hpp`, above, now
-`test/native/zigzag_fast.hpp`), and its
+zigzag conversion is ported from `archive/cpp:test/native/zigzag_fast.hpp`, above, on the
+branch `archive/cpp` since 2026-10-16), and its
 oracles are this package's own (dense linear algebra, Hom dimensions, the
 Rips engine for the row diagrams).
 
 commutazzio 0.5.2, with fzzpy (which compiles FZZ), was run afterwards
 (2026-10-05) for a comparison with the engine, in a virtual environment
 outside this repository and through its public API. That comparison was
-removed from this repository on 2026-10-10 (CHANGELOG.md).
+removed from this repository on 2026-10-10 (docs/DEVELOPMENT_HISTORY.md).
 
 commutazzio 0.5.2 is run as an external comparison of the CL(4)
 decomposition (`benchmarks/ladder_decomposition/`, since 2026-10-10):
@@ -582,10 +685,13 @@ installed or run.
 - **Source:** https://github.com/geoo89/rhomboidtiling
 - **Status:** Not vendored, not linked, not transcribed. The reference
   implementation of Corbet–Kerber–Lesnick–Osang's rhomboid bifiltration is used
-  by `test/native/gen_kfold_fixture.py` as an out-of-tree ORACLE GENERATOR to
-  produce `test/native/kfold_fixture.txt`. Building it requires CGAL, which is
+  by `rust/tda-core/tests/fixtures/kfold/gen_kfold_fixture.py` as an
+  out-of-tree ORACLE GENERATOR to produce
+  `rust/tda-core/tests/fixtures/kfold/rhomboidtiling.txt` (until 2026-10-16
+  archive/cpp:test/native/kfold_fixture.txt). Building it requires CGAL, which is
   why it stays out of this repository entirely;
-  `src/geom/kfold_cover.hpp` was written from the published papers
+  the k-fold cover builder (`archive/cpp:test/native/kfold_cover.hpp`, since 2026-10-15
+  `rust/tda-core/src/kfold`) was written from the published papers
   (Edelsbrunner–Osang, SoCG 2018 and arXiv:2011.03617), not from its source.
   Only the generated numerical data is committed here, and data produced by a
   program is not a derivative work of that program.
@@ -598,10 +704,11 @@ installed or run.
 - **Status:** Not vendored, not linked, not transcribed. Run out of tree by
   `scripts/generate_delaunay_cech_oracle.py` to produce
   `test/fixtures/delaunay_cech/gudhi_oracle.json`, the external check of the
-  Delaunay–Čech complex. `src/geom/delaunay_cech.hpp` builds on this
-  package's own Geogram path and enclosing-ball code; its value rule is the
+  Delaunay–Čech complex. `rust/tda-core/src/alpha/delaunay_cech.rs` builds on this
+  package's own triangulation and enclosing-ball code; its value rule is the
   rule of GUDHI's C++ `assign_MEB_filtration` (`MEB_filtration.h`, MIT),
-  stated and justified from the definition in `src/geom/cech_complex.hpp`.
+  stated and justified from the definition in
+  `rust/tda-core/src/geometry/cech.rs`.
   Only the generated numerical data is committed, and data produced by a
   program is not a derivative work of that program.
 
@@ -609,9 +716,12 @@ installed or run.
 
 - **Own code:** `rust/tda-core` (Rips persistence and its representative
   cycles and cocycles, cubical persistence, the Rips, flag, explicit and
-  cubical complexes) and `rust/tda-core-c` (its C ABI for the Emscripten
-  module, which also calls `ot-diagram`), part of this package, both MIT, with
-  no dependencies beyond each other and `ot-diagram`. The algorithms are
+  cubical complexes, the 3D regular triangulation; the triangulation follows
+  Geogram's conventions, see "Geogram"), `rust/tda-wasm` (the module's
+  bindings), part of this package, all MIT (until 2026-10-16 also the C ABI
+  crate archive/cpp:rust/tda-core-c, linked into the Emscripten module and then used by
+  the native C++ oracle tests; on the branch `archive/cpp` since), with
+  no dependencies beyond each other, `ot-diagram`, `musl-math` and `libm` (below). The algorithms are
   written from the papers cited in the module docs (Bauer's Ripser paper, de
   Silva–Morozov–Vejdemo-Johansson for the cohomology/homology duality the
   representative cycles rest on, Boissonnat–Pritam and Glisse–Pritam for edge
@@ -626,32 +736,126 @@ installed or run.
   `scripts/sync-ot-diagram.mjs --check` (run by `npm test` and CI) fails when
   a copy differs. ot-core's bottleneck distance follows Efrat–Itai–Katz and
   Kerber–Morozov–Nigmetov; its network simplex pivot is derived from LEMON, so
-  the crate is `MIT AND BSL-1.0` (see "LEMON" above). No runtime dependencies
-  (`serde_json` in its tests only). Until 0.3.0 `rust/tda-core/src/diagram`
+  the crate is `MIT AND BSL-1.0` (see "LEMON" above). One runtime dependency,
+  `musl-math` (below), whose `pow` `persistence.rs` calls in place of
+  `f64::powf` since 2026-10-16; ot-core does the same since ot-wasm
+  `7196ec8` (`serde_json` in the tests only). Until 0.3.0 `rust/tda-core/src/diagram`
   held tda-wasm's own port of the same code (from ot-wasm `d7a97ba`); it is
   removed.
+- **`rust/tda-core/src/coupled_alpha`** (since 2026-10-15): the planar
+  coupled alpha complex, a port of this package's own C++ builder (on the
+  branch `archive/cpp` since 2026-10-16), with a software IEEE binary128
+  (`binary128.rs`), because the C++ computed in `long double` and stable Rust
+  has no `f128`. Provenance of `binary128.rs`:
+  - `F128::hypot` transcribes musl's `src/math/hypotl.c` (the 113-bit
+    significand branch) operation for operation, so that it gives the bits of
+    the `hypotl` Emscripten linked. musl is MIT:
+
+    ```
+    Copyright © 2005-2020 Rich Felker, et al.
+
+    Permission is hereby granted, free of charge, to any person obtaining
+    a copy of this software and associated documentation files (the
+    "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Software, and to
+    permit persons to whom the Software is furnished to do so, subject to
+    the following conditions:
+
+    The above copyright notice and this permission notice shall be
+    included in all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+    EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+    CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+    TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+    ```
+  - Addition and multiplication follow the structure of LLVM compiler-rt's
+    `fp_add_impl.inc` and `fp_mul_impl.inc` (Apache-2.0 WITH LLVM-exception;
+    written in Rust here, no file copied; the Apache License 2.0 with the LLVM
+    exception is reproduced in "Notice texts" below, so that the notice
+    travels with the binary whether or not following the structure of those
+    files makes `binary128.rs` a derivative of them), and the NaN results of addition
+    follow Rust's `compiler_builtins` (MIT OR Apache-2.0), whose routines the
+    module linked before the port. Division and square root are written here.
+- **`rust/musl-math`** (since 2026-10-16): `exp`, `log`, `pow` and `hypot`,
+  ported operation for operation from musl's `src/math` as Emscripten 4.0.15
+  ships it, so that `tda-core` and `ot-diagram` give the bits of the
+  Emscripten module on every target. `exp.c`, `pow.c`, `log.c` and the tables
+  of `exp_data.c`, `pow_data.c` and `log_data.c` (`src/data.rs`, generated
+  from them) are Szabolcs Nagy's routines from Arm Limited's
+  optimized-routines, in musl under "Copyright (c) 2018, Arm Limited.
+  SPDX-License-Identifier: MIT" (musl's COPYRIGHT: "Copyright © 2017-2018 Arm
+  Limited ... licensed under extremely permissive terms"); `hypot.c` is
+  musl's own. Both under musl's MIT licence:
+
+    ```
+    Copyright © 2005-2020 Rich Felker, et al.
+    Copyright (c) 2018, Arm Limited (exp.c, pow.c, log.c and their data)
+
+    Permission is hereby granted, free of charge, to any person obtaining
+    a copy of this software and associated documentation files (the
+    "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Software, and to
+    permit persons to whom the Software is furnished to do so, subject to
+    the following conditions:
+
+    The above copyright notice and this permission notice shall be
+    included in all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+    EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+    CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+    TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+    ```
+
+  Its test crate `rust/musl-math-oracle` (not linked into any module) holds
+  musl's recorded results; the C harness that recorded them
+  (`emscripten/musl_eval.c`, `gen_tables.c`: own code, MIT) is on the branch
+  `archive/cpp` since 2026-10-16.
 - No code from GPL, LGPL, AGPL or academic-only implementations (PHAT,
   CubicalRipser, giotto-ph, HomCloud, FZZ) was read or used in these crates.
   GUDHI, POT, Hera, ripser.py and CubicalRipser are used only as black-box
   test oracles.
+- **`libm` 0.2.16** (crates.io; licence **MIT**, `no_std`; not "MIT OR
+  Apache-2.0": its metadata and its `LICENSE.txt` say MIT and ask contributors
+  to dual-license, which does not change the licence of the published crate):
+  `hypot`, `sin` and `cos` of the ellipsoid and wing builders, a Rust port of
+  musl's libm, the code the Emscripten build of the C++ builders linked; the
+  ported builders take it on every target so that native and WebAssembly
+  builds give the same bits. Its `LICENSE.txt`, with the component notices it
+  carries (musl, CORE-MATH, Sun Microsystems, FreeBSD, Arm), is in "Notice
+  texts" below.
 - **Rust standard library** (`core`, `alloc`, `std`, for
-  `wasm32-unknown-emscripten`) — MIT OR Apache-2.0, linked into the `.wasm` by
-  the Rust compiler (1.98.1).
+  `wasm32-unknown-unknown`; `wasm32-unknown-emscripten` until 2026-10-16) —
+  MIT OR Apache-2.0, linked into the `.wasm` by the Rust compiler (1.98.1).
 
-## Emscripten
+## Emscripten — until 2026-10-16 only
 
 - **License:** MIT
-- **Version:** 4.0.15 (CI and the maintainer toolchain)
+- **Version:** 4.0.15
 - **Source:** https://emscripten.org/
-- **Used for:** Compiling the C++ sources to WebAssembly; portions of the
-  Emscripten runtime are embedded in the generated `.mjs` loader.
+- **Used for:** until 2026-10-16, compiling the C++ sources to WebAssembly;
+  portions of the Emscripten runtime were embedded in the generated `.mjs`
+  loader. Not used since: the module is built with wasm-bindgen and contains
+  no Emscripten runtime. The two recorders of test fixtures that still used it
+  (musl's results, recorded by `rust/musl-math-oracle/emscripten/`; the
+  coupled alpha oracle of `rust/tda-core/examples/coupled_alpha_differential.rs`)
+  are on the branch `archive/cpp` since 2026-10-16; the fixtures they wrote
+  stay.
 
-### Emscripten runtime libraries linked into the shipped binary
+### Emscripten runtime libraries linked into the binary until 2026-10-16
 
 Emscripten links its own C and C++ runtime into every binary it produces.
-These are not dependencies this package chooses or vendors, but they are
-present in the distributed `dist/tda.wasm` and `dist/tda.mjs`, so they are
-listed here:
+These were present in the distributed `dist/tda.wasm` and `dist/tda.mjs`
+until the switch to wasm-bindgen, and none is in the module now:
 
 - **musl libc** — MIT. Emscripten's C standard library, derived from musl.
   Source: https://musl.libc.org/ and `emscripten/system/lib/libc/musl`.
@@ -667,3 +871,373 @@ a differently-licensed binary without imposing attribution on the binary's
 users. All four are permissive and compatible with this package's MIT license.
 Full texts ship with the Emscripten SDK
 (`emsdk/upstream/emscripten/LICENSE`, and the LLVM `LICENSE.TXT`).
+
+## Notice texts
+
+Texts reproduced from the crates' own licence files (registry sources of the
+versions in the lockfiles), for the notices required above.
+
+### MIT License (wasm-bindgen, wasm-bindgen-shared, js-sys, futures-*, pin-project-lite, slab, once_cell, cfg-if, unicode-ident)
+
+The copyright lines of each crate are in the table above; the permission
+notice is the same for all of them:
+
+    Permission is hereby granted, free of charge, to any
+    person obtaining a copy of this software and associated
+    documentation files (the "Software"), to deal in the
+    Software without restriction, including without
+    limitation the rights to use, copy, modify, merge,
+    publish, distribute, sublicense, and/or sell copies of
+    the Software, and to permit persons to whom the Software
+    is furnished to do so, subject to the following
+    conditions:
+
+    The above copyright notice and this permission notice
+    shall be included in all copies or substantial portions
+    of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+    ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+    TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+    PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+    SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+    CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+    OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+    IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+
+### Unicode License v3 (Unicode-3.0: unicode-ident's data tables; `core`'s Unicode tables)
+
+    UNICODE LICENSE V3
+
+    COPYRIGHT AND PERMISSION NOTICE
+
+    Copyright © 1991-2023 Unicode, Inc.
+
+    NOTICE TO USER: Carefully read the following legal agreement. BY
+    DOWNLOADING, INSTALLING, COPYING OR OTHERWISE USING DATA FILES, AND/OR
+    SOFTWARE, YOU UNEQUIVOCALLY ACCEPT, AND AGREE TO BE BOUND BY, ALL OF THE
+    TERMS AND CONDITIONS OF THIS AGREEMENT. IF YOU DO NOT AGREE, DO NOT
+    DOWNLOAD, INSTALL, COPY, DISTRIBUTE OR USE THE DATA FILES OR SOFTWARE.
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of data files and any associated documentation (the "Data Files") or
+    software and any associated documentation (the "Software") to deal in the
+    Data Files or Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, and/or sell
+    copies of the Data Files or Software, and to permit persons to whom the
+    Data Files or Software are furnished to do so, provided that either (a)
+    this copyright and permission notice appear with all copies of the Data
+    Files or Software, or (b) this copyright and permission notice appear in
+    associated Documentation.
+
+    THE DATA FILES AND SOFTWARE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+    KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF
+    THIRD PARTY RIGHTS.
+
+    IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS NOTICE
+    BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL DAMAGES,
+    OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+    WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+    ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THE DATA
+    FILES OR SOFTWARE.
+
+    Except as contained in this notice, the name of a copyright holder shall
+    not be used in advertising or otherwise to promote the sale, use or other
+    dealings in these Data Files or Software without prior written
+    authorization of the copyright holder.
+
+### libm 0.2.16 — `LICENSE.txt` (MIT; contributors' dual-license note and component notices)
+
+    rust-lang/libm as a whole is available for use under the MIT license:
+
+    ------------------------------------------------------------------------------
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+    ------------------------------------------------------------------------------
+
+    As a contributor, you agree that your code can be used under either the MIT
+    license or the Apache-2.0 license:
+
+    ------------------------------------------------------------------------------
+    [the Apache License 2.0, reproduced in full in "Apache License 2.0" below]
+    ------------------------------------------------------------------------------
+
+    This Rust library contains the following copyrights:
+
+        Copyright (c) 2018 Jorge Aparicio
+
+    Portions of this software are derived from third-party works licensed under
+    terms compatible with the above MIT license:
+
+    * musl libc https://www.musl-libc.org/. This library contains the following
+      copyright:
+
+          Copyright © 2005-2020 Rich Felker, et al.
+
+    * The CORE-MATH project https://core-math.gitlabpages.inria.fr/. CORE-MATH
+      routines are available under the MIT license on a per-file basis.
+
+    The musl libc COPYRIGHT file also includes the following notice relevant to
+    math portions of the library:
+
+    ------------------------------------------------------------------------------
+    Much of the math library code (src/math/* and src/complex/*) is
+    Copyright © 1993,2004 Sun Microsystems or
+    Copyright © 2003-2011 David Schultz or
+    Copyright © 2003-2009 Steven G. Kargl or
+    Copyright © 2003-2009 Bruce D. Evans or
+    Copyright © 2008 Stephen L. Moshier or
+    Copyright © 2017-2018 Arm Limited
+    and labelled as such in comments in the individual source files. All
+    have been licensed under extremely permissive terms.
+    ------------------------------------------------------------------------------
+
+    Copyright notices are retained in src/* files where relevant.
+
+### Apache License 2.0
+
+For every crate above offered as "MIT OR Apache-2.0" (not taken here), for the
+contributor note in libm's licence, and for the LLVM-derived structure of
+`rust/tda-core/src/coupled_alpha/binary128.rs`:
+
+                                  Apache License
+                            Version 2.0, January 2004
+                         http://www.apache.org/licenses/
+
+    TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+    1. Definitions.
+
+       "License" shall mean the terms and conditions for use, reproduction,
+       and distribution as defined by Sections 1 through 9 of this document.
+
+       "Licensor" shall mean the copyright owner or entity authorized by
+       the copyright owner that is granting the License.
+
+       "Legal Entity" shall mean the union of the acting entity and all
+       other entities that control, are controlled by, or are under common
+       control with that entity. For the purposes of this definition,
+       "control" means (i) the power, direct or indirect, to cause the
+       direction or management of such entity, whether by contract or
+       otherwise, or (ii) ownership of fifty percent (50%) or more of the
+       outstanding shares, or (iii) beneficial ownership of such entity.
+
+       "You" (or "Your") shall mean an individual or Legal Entity
+       exercising permissions granted by this License.
+
+       "Source" form shall mean the preferred form for making modifications,
+       including but not limited to software source code, documentation
+       source, and configuration files.
+
+       "Object" form shall mean any form resulting from mechanical
+       transformation or translation of a Source form, including but
+       not limited to compiled object code, generated documentation,
+       and conversions to other media types.
+
+       "Work" shall mean the work of authorship, whether in Source or
+       Object form, made available under the License, as indicated by a
+       copyright notice that is included in or attached to the work
+       (an example is provided in the Appendix below).
+
+       "Derivative Works" shall mean any work, whether in Source or Object
+       form, that is based on (or derived from) the Work and for which the
+       editorial revisions, annotations, elaborations, or other modifications
+       represent, as a whole, an original work of authorship. For the purposes
+       of this License, Derivative Works shall not include works that remain
+       separable from, or merely link (or bind by name) to the interfaces of,
+       the Work and Derivative Works thereof.
+
+       "Contribution" shall mean any work of authorship, including
+       the original version of the Work and any modifications or additions
+       to that Work or Derivative Works thereof, that is intentionally
+       submitted to Licensor for inclusion in the Work by the copyright owner
+       or by an individual or Legal Entity authorized to submit on behalf of
+       the copyright owner. For the purposes of this definition, "submitted"
+       means any form of electronic, verbal, or written communication sent
+       to the Licensor or its representatives, including but not limited to
+       communication on electronic mailing lists, source code control systems,
+       and issue tracking systems that are managed by, or on behalf of, the
+       Licensor for the purpose of discussing and improving the Work, but
+       excluding communication that is conspicuously marked or otherwise
+       designated in writing by the copyright owner as "Not a Contribution."
+
+       "Contributor" shall mean Licensor and any individual or Legal Entity
+       on behalf of whom a Contribution has been received by Licensor and
+       subsequently incorporated within the Work.
+
+    2. Grant of Copyright License. Subject to the terms and conditions of
+       this License, each Contributor hereby grants to You a perpetual,
+       worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+       copyright license to reproduce, prepare Derivative Works of,
+       publicly display, publicly perform, sublicense, and distribute the
+       Work and such Derivative Works in Source or Object form.
+
+    3. Grant of Patent License. Subject to the terms and conditions of
+       this License, each Contributor hereby grants to You a perpetual,
+       worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+       (except as stated in this section) patent license to make, have made,
+       use, offer to sell, sell, import, and otherwise transfer the Work,
+       where such license applies only to those patent claims licensable
+       by such Contributor that are necessarily infringed by their
+       Contribution(s) alone or by combination of their Contribution(s)
+       with the Work to which such Contribution(s) was submitted. If You
+       institute patent litigation against any entity (including a
+       cross-claim or counterclaim in a lawsuit) alleging that the Work
+       or a Contribution incorporated within the Work constitutes direct
+       or contributory patent infringement, then any patent licenses
+       granted to You under this License for that Work shall terminate
+       as of the date such litigation is filed.
+
+    4. Redistribution. You may reproduce and distribute copies of the
+       Work or Derivative Works thereof in any medium, with or without
+       modifications, and in Source or Object form, provided that You
+       meet the following conditions:
+
+       (a) You must give any other recipients of the Work or
+           Derivative Works a copy of this License; and
+
+       (b) You must cause any modified files to carry prominent notices
+           stating that You changed the files; and
+
+       (c) You must retain, in the Source form of any Derivative Works
+           that You distribute, all copyright, patent, trademark, and
+           attribution notices from the Source form of the Work,
+           excluding those notices that do not pertain to any part of
+           the Derivative Works; and
+
+       (d) If the Work includes a "NOTICE" text file as part of its
+           distribution, then any Derivative Works that You distribute must
+           include a readable copy of the attribution notices contained
+           within such NOTICE file, excluding those notices that do not
+           pertain to any part of the Derivative Works, in at least one
+           of the following places: within a NOTICE text file distributed
+           as part of the Derivative Works; within the Source form or
+           documentation, if provided along with the Derivative Works; or,
+           within a display generated by the Derivative Works, if and
+           wherever such third-party notices normally appear. The contents
+           of the NOTICE file are for informational purposes only and
+           do not modify the License. You may add Your own attribution
+           notices within Derivative Works that You distribute, alongside
+           or as an addendum to the NOTICE text from the Work, provided
+           that such additional attribution notices cannot be construed
+           as modifying the License.
+
+       You may add Your own copyright statement to Your modifications and
+       may provide additional or different license terms and conditions
+       for use, reproduction, or distribution of Your modifications, or
+       for any such Derivative Works as a whole, provided Your use,
+       reproduction, and distribution of the Work otherwise complies with
+       the conditions stated in this License.
+
+    5. Submission of Contributions. Unless You explicitly state otherwise,
+       any Contribution intentionally submitted for inclusion in the Work
+       by You to the Licensor shall be under the terms and conditions of
+       this License, without any additional terms or conditions.
+       Notwithstanding the above, nothing herein shall supersede or modify
+       the terms of any separate license agreement you may have executed
+       with Licensor regarding such Contributions.
+
+    6. Trademarks. This License does not grant permission to use the trade
+       names, trademarks, service marks, or product names of the Licensor,
+       except as required for reasonable and customary use in describing the
+       origin of the Work and reproducing the content of the NOTICE file.
+
+    7. Disclaimer of Warranty. Unless required by applicable law or
+       agreed to in writing, Licensor provides the Work (and each
+       Contributor provides its Contributions) on an "AS IS" BASIS,
+       WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+       implied, including, without limitation, any warranties or conditions
+       of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+       PARTICULAR PURPOSE. You are solely responsible for determining the
+       appropriateness of using or redistributing the Work and assume any
+       risks associated with Your exercise of permissions under this License.
+
+    8. Limitation of Liability. In no event and under no legal theory,
+       whether in tort (including negligence), contract, or otherwise,
+       unless required by applicable law (such as deliberate and grossly
+       negligent acts) or agreed to in writing, shall any Contributor be
+       liable to You for damages, including any direct, indirect, special,
+       incidental, or consequential damages of any character arising as a
+       result of this License or out of the use or inability to use the
+       Work (including but not limited to damages for loss of goodwill,
+       work stoppage, computer failure or malfunction, or any and all
+       other commercial damages or losses), even if such Contributor
+       has been advised of the possibility of such damages.
+
+    9. Accepting Warranty or Additional Liability. While redistributing
+       the Work or Derivative Works thereof, You may choose to offer,
+       and charge a fee for, acceptance of support, warranty, indemnity,
+       or other liability obligations and/or rights consistent with this
+       License. However, in accepting such obligations, You may act only
+       on Your own behalf and on Your sole responsibility, not on behalf
+       of any other Contributor, and only if You agree to indemnify,
+       defend, and hold each Contributor harmless for any liability
+       incurred by, or claims asserted against, such Contributor by reason
+       of your accepting any such warranty or additional liability.
+
+    END OF TERMS AND CONDITIONS
+
+    APPENDIX: How to apply the Apache License to your work.
+
+       To apply the Apache License to your work, attach the following
+       boilerplate notice, with the fields enclosed by brackets "[]"
+       replaced with your own identifying information. (Don't include
+       the brackets!)  The text should be enclosed in the appropriate
+       comment syntax for the file format. We also recommend that a
+       file or class name and description of purpose be included on the
+       same "printed page" as the copyright notice for easier
+       identification within third-party archives.
+
+    Copyright [yyyy] [name of copyright owner]
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+    	http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+### LLVM Exception to the Apache License 2.0
+
+LLVM compiler-rt (`fp_add_impl.inc`, `fp_mul_impl.inc`; "Part of the LLVM
+Project, under the Apache License v2.0 with LLVM Exceptions") and the
+compiler-rt routines inside Rust's `compiler_builtins` are under the Apache
+License 2.0 with this exception:
+
+    ---- LLVM Exceptions to the Apache 2.0 License ----
+
+    As an exception, if, as a result of your compiling your source code, portions
+    of this Software are embedded into an Object form of such source code, you
+    may redistribute such embedded portions in such Object form without complying
+    with the conditions of Sections 4(a), 4(b) and 4(d) of the License.
+
+    In addition, if you combine or link compiled forms of this Software with
+    software that is licensed under the GPLv2 ("Combined Software") and if a
+    court of competent jurisdiction determines that the patent provision (Section
+    3), the indemnity provision (Section 9) or other Section of the License
+    conflicts with the conditions of the GPLv2, you may retroactively and
+    prospectively choose to deem waived or otherwise exclude such Section(s) of
+    the License, but only in their entirety and only with respect to the Combined
+    Software.

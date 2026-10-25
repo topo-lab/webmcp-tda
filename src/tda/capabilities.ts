@@ -25,7 +25,7 @@ export const COMPLEX_CAPABILITIES: ComplexCapability[] = [
     status: 'experimental',
     dimensions: [2, 3],
     parameters: ['maxEdgeLength', 'maxSimplexDimension'],
-    filtrationUnits: 'distance',
+    filtrationUnits: 'edge length',
     note: 'Flag complex from pairwise distances.',
   },
   {
@@ -35,7 +35,7 @@ export const COMPLEX_CAPABILITIES: ComplexCapability[] = [
     dimensions: [2, 3],
     parameters: ['maxSimplexDimension'],
     filtrationUnits: 'squared radius',
-    note: 'Unweighted alpha complex; 2D clouds are projected to their affine hull.',
+    note: 'Unweighted alpha complex; a 2D cloud is placed in the plane z = 0.',
   },
   {
     id: 'cech',
@@ -44,7 +44,7 @@ export const COMPLEX_CAPABILITIES: ComplexCapability[] = [
     dimensions: [2, 3],
     parameters: ['maxRadius', 'maxSimplexDimension'],
     filtrationUnits: 'radius',
-    note: 'Nerve of Euclidean balls using exact minimal enclosing-ball radii.',
+    note: 'Nerve of equal-radius Euclidean balls; a simplex enters at the radius of the smallest ball enclosing its vertices.',
   },
 ];
 
@@ -64,13 +64,14 @@ export const CAPABILITIES = {
     resultLimit: DEFAULT_RESULT_LIMIT,
   },
   results: {
-    reliableDimensions: 'H0 and H1 for 2D clouds, H0 to H2 for 3D clouds; classes above that are truncation artifacts and are counted as excluded, not returned',
+    reliableDimensions: 'at the default maximum simplex dimension, H0 and H1 for 2D clouds and H0 to H2 for 3D clouds; classes above that are truncation artifacts and are counted as excluded, not returned',
     longLived: 'a class is long-lived when it survives to the computed end, or lives at least 20% as long as the longest-lived class of dimension 1 or higher; an infinite death may reflect a filtration limit',
     roundOff: 'simplicial pairs no longer than 1e-12 of the largest filtration value are floating-point round-off and are left out',
     errors: 'failures are returned as {ok:false, error:{code, message, field, hint}} instead of being thrown',
   },
   simplicialComplexes: COMPLEX_CAPABILITIES,
   cubical: {
+    status: 'experimental',
     dimensions: [2],
     input: 'current uploaded image, built-in sample, or row-major scalar values',
     samples: IMAGE_SAMPLE_IDS,

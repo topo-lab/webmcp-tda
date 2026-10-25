@@ -87,8 +87,6 @@ Use these Devpost tags:
 
 - Live demo: https://webmcp-tda.pages.dev
 - Public source: https://github.com/topo-lab/webmcp-tda
-- WASM source: https://github.com/topo-lab/tda-wasm
-- Visualization source: https://github.com/topo-lab/tda-viz-react
 - Demo video: ADD_PUBLIC_YOUTUBE_URL
 
 ## Additional information

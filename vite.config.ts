@@ -5,7 +5,6 @@ import { defineConfig, type Plugin } from 'vite';
 export const LICENSE_FILES: Record<string, string> = {
   'licenses/tda-wasm/LICENSE.txt': 'vendor/tda-wasm/LICENSE',
   'licenses/tda-wasm/THIRD_PARTY_LICENSES.txt': 'vendor/tda-wasm/THIRD_PARTY_LICENSES.md',
-  'licenses/geogram/LICENSE.txt': 'vendor/tda-wasm/third_party/geogram_delaunay/LICENSE',
   'licenses/tda-viz-react/LICENSE.txt': 'vendor/tda-viz-react/LICENSE',
 };
 
