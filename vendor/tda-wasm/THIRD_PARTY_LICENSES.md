@@ -6,7 +6,7 @@ exported as `@topolab/tda-wasm/tda.wasm`, with its glue
 `rust/tda-wasm`, `rust/tda-core` and `rust/musl-math`, this package's own
 code (musl-math a port of musl's MIT code, see "Rust core"), and
 `rust/ot-diagram`, the diagram-distance code of ot-wasm's `ot-core`
-(Topolab's own) copied verbatim, whose network simplex pivot is derived from
+(topolab's own) copied verbatim, whose network simplex pivot is derived from
 LEMON (see "LEMON" and "Rust core" below); with the wasm-bindgen runtime
 crates and the Rust standard library ("Rust code linked into the shipped WebAssembly modules" below).
 Nothing else is linked or included: no C++ since 2026-10-16 (until then the
@@ -267,7 +267,7 @@ Contact: Bruno Levy
 Source: LEMON 1.3.1, `lemon/network_simplex.h`, class `NetworkSimplex`
 (<https://lemon.cs.elte.hu/>). The network simplex in
 `rust/ot-diagram/src/emd.rs`, behind `diagramWasserstein`, is a verbatim copy
-of ot-wasm's `crates/ot-core/src/emd.rs` (Topolab's own; commit `24b6ee2`,
+of ot-wasm's `crates/ot-core/src/emd.rs` (topolab's own; commit `24b6ee2`,
 recorded with the SHA-256 of every copied file in
 `rust/ot-diagram/UPSTREAM.json` and checked by
 `scripts/sync-ot-diagram.mjs --check`), whose pivot is a Rust translation of
@@ -599,10 +599,10 @@ change the licence of this package's own code.
 | cfg-if | 1.0.5 | MIT OR Apache-2.0 | Copyright (c) 2014 Alex Crichton | yes | yes |
 | unicode-ident | 1.0.26 | (MIT OR Apache-2.0) AND Unicode-3.0 | none in its LICENSE-MIT (author: David Tolnay); Unicode-3.0 part: Copyright (c) 1991-2023 Unicode, Inc. | yes | yes |
 | libm | 0.2.16 | **MIT** | Copyright (c) 2018 Jorge Aparicio; portions of musl libc (Copyright (c) 2005-2020 Rich Felker, et al.), the CORE-MATH project, and the Sun, FreeBSD and Arm notices listed in its file | yes | no |
-| `memory-phase` (this repository, `rust/memory-phase`) | 0.1.0 | own code | Topolab | yes | yes |
+| `memory-phase` (this repository, `rust/memory-phase`) | 0.1.0 | own code | topolab | yes | yes |
 | `musl-math` (this repository, `rust/musl-math`; derived from musl, see "Rust core" below) | 0.1.0 | own code; MIT-licensed musl and Arm optimized-routines parts | see "Rust core" | yes | no |
 | `ot-diagram` (this repository; derived from LEMON, see "LEMON") | 0.1.0 | own code; BSL-1.0 part | see "LEMON" | yes | no |
-| `tda-core`, `tda-wasm` / `tda-ladder`, `tda-ladder-wasm` (this repository) | | own code | Topolab | yes | yes (ladder crates) |
+| `tda-core`, `tda-wasm` / `tda-ladder`, `tda-ladder-wasm` (this repository) | | own code | topolab | yes | yes (ladder crates) |
 
 `unicode-ident` is a dependency of `wasm-bindgen-shared`, so it is in the
 dependency graph of both modules. Whether a given function of it survives in
@@ -730,7 +730,7 @@ installed or run.
   `diagramWasserstein` and `diagramBottleneck`. Every file but `lib.rs` is a
   verbatim copy of ot-wasm's `crates/ot-core/src/` (`persistence.rs`,
   `emd.rs`, `emd/assignment.rs`, `util.rs`, `error.rs` at commit `24b6ee2`;
-  ot-wasm is Topolab's own, MIT), so `@topolab/tda-wasm` and
+  ot-wasm is topolab's own, MIT), so `@topolab/tda-wasm` and
   `@topolab/ot-wasm` run the same code. `rust/ot-diagram/UPSTREAM.json`
   records the commit and each file's SHA-256, and
   `scripts/sync-ot-diagram.mjs --check` (run by `npm test` and CI) fails when
