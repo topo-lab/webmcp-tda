@@ -4,8 +4,6 @@ WebMCP TDA is a shared computational-topology workbench for people and their age
 
 Live demo: [webmcp-tda.pages.dev](https://webmcp-tda.pages.dev)
 
-This is a dedicated WebMCP project. It is not the TDA Explorer and contains no lessons or tutorial flow.
-
 ## Human workbench
 
 - Explore built-in 2D and 3D point-cloud examples with a live SVG/WebGL preview. In 2D, choose the Move tool to drag points or the Edit tool to enter exact coordinates. In both dimensions, play the computed filtration while its growing cover, simplices, and persistence-diagram playhead advance together. The maximum simplex dimension is selected automatically from the input dimension, while agents may explicitly override it. The cover uses radius t/2 for Rips, t for Čech, and √t for alpha. Three-dimensional clouds rotate automatically and support drag-to-orbit and wheel/pinch zoom through the local `tda-viz-react` library.

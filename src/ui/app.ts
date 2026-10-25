@@ -1,3 +1,4 @@
+import { animateDisclosures } from "./disclosures";
 import { getWorkspaceState, subscribeWorkspace, updateWorkspace, type WebMcpStatus } from '../state';
 import { isAbortError } from '../tda/errors';
 import { CAPABILITIES } from '../tda/capabilities';
@@ -230,7 +231,7 @@ export function mountApp(root: HTMLElement): () => void {
         </div>
         <div class="hero-copy">
           <p class="lede">Compute topology from point clouds and images. Work directly in the lab, or ask your agent to use the same tools while you watch the results appear.</p>
-          <div class="trust-row" aria-label="Runtime properties"><span>Local WASM</span><span>No upload</span><span>Shared with your agent</span></div>
+          <div class="trust-row" aria-label="Runtime properties"><span>Local WASM</span><span>On-device computation</span><span>Shared with your agent</span></div>
         </div>
       </section>
 
@@ -270,7 +271,7 @@ export function mountApp(root: HTMLElement): () => void {
                 <output id="filtration-value">Compute first</output>
               </div>
               <div class="run-row run-row--after-player"><button id="run-simplicial" class="primary-action" type="submit">Compute simplicial persistence</button><button id="cancel-simplicial" class="secondary-action cancel-compute" type="button" hidden>Cancel</button><p>Runs locally. Larger complexes may take a moment.</p></div>
-              <div id="parameter-heading" class="parameter-heading"><div><h3>Filtration settings</h3><p>Only geometry-specific controls are shown.</p></div></div>
+              <div id="parameter-heading" class="parameter-heading"><div><h3>Filtration settings</h3></div></div>
               <div id="parameter-fields" class="parameter-grid"></div>
               <details class="advanced-input">
                 <summary>Edit point coordinates</summary>
@@ -304,7 +305,7 @@ export function mountApp(root: HTMLElement): () => void {
                   </div>
                 </div>
               </figure>
-              <div class="run-row"><button id="run-cubical" class="primary-action" type="submit">Compute cubical persistence</button><button id="cancel-cubical" class="secondary-action cancel-compute" type="button" hidden>Cancel</button><p>Images never leave your browser.</p></div>
+              <div class="run-row"><button id="run-cubical" class="primary-action" type="submit">Compute cubical persistence</button><button id="cancel-cubical" class="secondary-action cancel-compute" type="button" hidden>Cancel</button><p>Image processing runs on your device.</p></div>
               <div class="method-note"><strong>How it works</strong><p>Photo → grayscale → gentle Gaussian denoise → Otsu or manual threshold → small-hole cleanup → binary cubical filtration over F₂. Turn off the mask to use grayscale intensities directly.</p></div>
             </form>
           </div>
@@ -327,7 +328,7 @@ export function mountApp(root: HTMLElement): () => void {
       </section>
 
       <section id="agent-access" class="agent-section" aria-labelledby="agent-title">
-        <div class="agent-intro"><p class="eyebrow">Agent access</p><h2 id="agent-title">One workbench, two ways to use it.</h2><p>These tools expose the same calculations and update the same visible result. Your agent can inspect capabilities, run a computation, and hand the result back without guessing through the interface.</p></div>
+        <div class="agent-intro"><p class="eyebrow">Agent access</p><h2 id="agent-title">One workbench, two ways to use it.</h2><p>These tools expose the same calculations and update the same visible result. Your agent can inspect capabilities, run a computation, and return results in the same workspace.</p></div>
         <div class="tool-list">
           <article><code>tda_get_capabilities</code><p>Discover supported complexes, parameters, units, and safety limits.</p><span>Read only</span></article>
           <article><code>tda_compute_simplicial_persistence</code><p>Compute one-parameter persistence from 2D or 3D point coordinates.</p><span>Updates workbench</span></article>
@@ -338,8 +339,8 @@ export function mountApp(root: HTMLElement): () => void {
     </main>
 
     <footer>
-      <span>WebMCP Challenge 2026</span><span>Human-first · agent-ready · browser-local</span>
-      <p id="credits" class="credits">Credits and licences: persistence is computed by @topolab/tda-wasm (MIT, <a href="licenses/tda-wasm/LICENSE.txt">licence</a>, <a href="licenses/tda-wasm/THIRD_PARTY_LICENSES.txt">third-party notices</a>), which includes Geogram's Delaunay code (BSD-3-Clause, <a href="licenses/geogram/LICENSE.txt">licence</a>); point clouds are drawn with tda-viz-react (MIT, <a href="licenses/tda-viz-react/LICENSE.txt">licence</a>). Pretzel photo by Willis Lam, <a href="https://creativecommons.org/licenses/by-sa/2.0/" rel="license noopener" target="_blank">CC BY-SA 2.0</a>; eyeglasses photo by Batholith, public domain; both via <a href="https://commons.wikimedia.org/" rel="noopener" target="_blank">Wikimedia Commons</a>.</p>
+      <span>WebMCP TDA</span><a href="https://topolab.app/">TopoLab</a>
+      <details class="credits"><summary>Credits and licences</summary><p id="credits">Credits and licences: persistence is computed by @topolab/tda-wasm (MIT, <a href="licenses/tda-wasm/LICENSE.txt">licence</a>, <a href="licenses/tda-wasm/THIRD_PARTY_LICENSES.txt">third-party notices</a>), which includes Geogram's Delaunay code (BSD-3-Clause, <a href="licenses/geogram/LICENSE.txt">licence</a>); point clouds are drawn with tda-viz-react (MIT, <a href="licenses/tda-viz-react/LICENSE.txt">licence</a>). Pretzel photo by Willis Lam, <a href="https://creativecommons.org/licenses/by-sa/2.0/" rel="license noopener" target="_blank">CC BY-SA 2.0</a>; eyeglasses photo by Batholith, public domain; both via <a href="https://commons.wikimedia.org/" rel="noopener" target="_blank">Wikimedia Commons</a>.</p></details>
     </footer>
   `;
 
@@ -429,6 +430,9 @@ export function mountApp(root: HTMLElement): () => void {
     emphasizeDiagramPair(diagram, pairs, highlightedPairId);
   };
 
+  const cleanupDisclosures = animateDisclosures(root, () => motion.paused());
+  let selectedMode = 'simplicial';
+  let panelAnimation: Animation | null = null;
   const setMode = (mode: 'simplicial' | 'cubical') => {
     modeTabs.forEach((tab) => {
       const selected = tab.dataset.mode === mode;
@@ -437,6 +441,14 @@ export function mountApp(root: HTMLElement): () => void {
     });
     simplicialPanel.hidden = mode !== 'simplicial';
     cubicalPanel.hidden = mode !== 'cubical';
+    if (selectedMode !== mode) {
+      panelAnimation?.cancel();
+      if (!motion.paused() && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        const panel = mode === 'cubical' ? cubicalPanel : simplicialPanel;
+        panelAnimation = panel.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220, easing: 'ease-out' });
+      }
+      selectedMode = mode;
+    }
     if (mode === 'cubical' && activeSimplicialResult) {
       stopFiltrationAnimation();
       filtrationRatio = 1;
@@ -1025,6 +1037,8 @@ export function mountApp(root: HTMLElement): () => void {
 
   return () => {
     stopFiltrationAnimation();
+    cleanupDisclosures();
+    panelAnimation?.cancel();
     unsubscribeMotion();
     motion.destroy();
     unbindBarcodeHover();
