@@ -27,7 +27,9 @@ function licenseNotices(): Plugin {
   };
 }
 
-export default defineConfig({
+// Production serves the workbench at https://topolab.ai/webmcp/; the dev server stays at /.
+export default defineConfig(({ command, isPreview }) => ({
+  base: command === 'build' || isPreview ? '/webmcp/' : '/',
   plugins: [licenseNotices()],
   resolve: {
     dedupe: ['react', 'react-dom', 'playcanvas'],
@@ -46,4 +48,4 @@ export default defineConfig({
   build: {
     sourcemap: true,
   },
-});
+}));

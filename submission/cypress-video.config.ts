@@ -5,7 +5,7 @@ export default defineConfig({
   videosFolder: 'submission/video/cypress',
   screenshotOnRunFailure: false,
   e2e: {
-    baseUrl: 'https://webmcp-tda.pages.dev',
+    baseUrl: 'https://topolab.ai/webmcp',
     specPattern: 'submission/demo-ui.cy.ts',
     supportFile: false,
     viewportWidth: 1440,

@@ -15,17 +15,17 @@ export const IMAGE_SAMPLES: Record<ImageSampleId, ImageSampleDescriptor> = {
   donut: {
     label: 'Chocolate doughnut',
     name: 'chocolate-doughnut',
-    url: '/samples/donut.jpg',
+    url: `${import.meta.env.BASE_URL}samples/donut.jpg`,
   },
   pretzel: {
     label: 'Soft pretzel',
     name: 'soft-pretzel',
-    url: '/samples/pretzel.jpg',
+    url: `${import.meta.env.BASE_URL}samples/pretzel.jpg`,
   },
   glasses: {
     label: 'Eyeglasses',
     name: 'eyeglasses',
-    url: '/samples/glasses.jpg',
+    url: `${import.meta.env.BASE_URL}samples/glasses.jpg`,
   },
 };
 
