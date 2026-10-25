@@ -2,9 +2,9 @@
   "package": "@topolab/tda-wasm",
   "version": "0.3.0",
   "repository": "https://github.com/topo-lab/tda-wasm",
-  "commit": "b2388f17f34fffe5f9092019eea0a08d124195a1",
+  "commit": "6f4c692046d9e51dfb7b320f79a37d71a5da3a00",
   "build": {
-    "date": "2026-10-25T09:05:39Z",
+    "date": "2026-10-25T10:30:17Z",
     "engine": "wasm-bindgen",
     "rust": "rustc 1.98.1 (48a229cea 2026-09-01)",
     "wasm_bindgen": "0.2.129",
@@ -18,11 +18,11 @@
   "files": {
     "LICENSE": {
       "bytes": 1064,
-      "sha256": "1762986b0421648fb913642c01d2485cf10a46e050cd89640667ff5ebbf619f5"
+      "sha256": "360ae1a060735d7a4fcf658edc7ad92993a74d7868640aa93c3bdd858244c0bb"
     },
     "THIRD_PARTY_LICENSES.md": {
       "bytes": 73096,
-      "sha256": "02122523986c49d39c0efcda3f24994b55abfc9cbddc695b1e000929df3af4bf"
+      "sha256": "85bc9ea78d93b2c91712f2f5ff1b174be390950547b65335f93fd4499a0dd8cd"
     },
     "dist/check.d.ts": {
       "bytes": 4788,
