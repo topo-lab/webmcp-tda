@@ -104,7 +104,7 @@ describe('human point input', () => {
 
   it('describes an image result with its segmentation and counts', () => {
     expect(resultDescription(cubicalResult({ persistence: summary({ persistentByDimension: { 1: 1 }, essentialByDimension: { 0: 1 } }) })))
-      .toMatch(/^agent-values was analyzed as a 2 × 2 sublevel cubical filtration over F2\. It was segmented at gray level 127 with dark pixels as foreground\. It has 1 connected component, 1 long-lived loop \(H₁\)\./);
+      .toMatch(/^The agent-values image was analyzed as a 2 × 2 sublevel cubical filtration over F₂\. It was segmented at gray level 127 with dark pixels as foreground\. It has 1 connected component, 1 long-lived loop \(H₁\)\./);
     const gray = cubicalResult({ input: { ...cubicalResult().input, binarized: false, threshold: null, foreground: null } });
     expect(resultDescription(gray)).toMatch(/Its grayscale values were used directly\./);
   });
