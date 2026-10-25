@@ -206,7 +206,7 @@ export function resultDescription(result: ComputeResult): string {
   const preprocessing = result.input.binarized
     ? `It was segmented at gray level ${result.input.threshold} with ${result.input.foreground} pixels as foreground.`
     : 'Its grayscale values were used directly.';
-  return `${result.input.name} was analyzed as a ${result.input.width} × ${result.input.height} ${result.input.filtration} cubical filtration over F2. ${preprocessing} It has ${found.join(', ')}. ${longLived}`;
+  return `The ${result.input.name} image was analyzed as a ${result.input.width} × ${result.input.height} ${result.input.filtration} cubical filtration over F₂. ${preprocessing} It has ${found.join(', ')}. ${longLived}`;
 }
 
 export function mountApp(root: HTMLElement): () => void {

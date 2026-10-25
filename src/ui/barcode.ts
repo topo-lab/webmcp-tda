@@ -142,7 +142,7 @@ export function renderBarcode(container: HTMLElement, pairs: readonly Serializab
   if (figure.empty) {
     container.dataset.empty = 'true';
     container.dataset.hasHighlight = 'false';
-    container.innerHTML = '<p class="barcode-empty">Run a computation to see its intervals.</p>';
+    container.innerHTML = '<p class="barcode-empty">No intervals to show.</p>';
     return;
   }
   container.dataset.empty = 'false';

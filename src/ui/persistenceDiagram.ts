@@ -185,13 +185,16 @@ export function buildPersistenceDiagram(
       },
       shapes: diagramShapes(minimum, numericMaximum, axisMaximum, infinityLevel, options.playhead),
       annotations: visiblePairs.length === 0 ? [{
-        text: 'Run a computation to see the persistence diagram.',
+        // Two short lines: one long line ran past a phone-width plot onto the tick labels.
+        text: 'Run a computation<br>to see the diagram.',
         x: 0.5,
         y: 0.5,
         xref: 'paper',
         yref: 'paper',
         showarrow: false,
         font: { family: 'IBM Plex Mono, monospace', size: 11, color: '#71858b' },
+        bgcolor: 'rgba(255, 255, 255, .9)',
+        borderpad: 4,
       }] : [],
     },
     config: {

@@ -136,7 +136,7 @@ export class TdaRuntime {
       const result = await this.backend.run(request, image, job.controller.signal);
       const shownInWorkspace = generation === this.generation;
       if (shownInWorkspace) {
-        updateWorkspace({ status: 'ready', activity: `${result.kind} persistence ready.`, latestResult: result });
+        updateWorkspace({ status: 'ready', activity: `${result.kind === 'simplicial' ? 'Simplicial' : 'Cubical'} persistence ready.`, latestResult: result });
       }
       return { result, shownInWorkspace };
     } catch (error) {
