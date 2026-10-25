@@ -327,7 +327,7 @@ export function mountApp(root: HTMLElement): () => void {
             <figure class="diagram-card"><figcaption><span>Persistence diagram</span><span class="diagram-legend"><i class="h0"></i>H₀ <i class="h1"></i>H₁ <i class="h2"></i>H₂</span></figcaption><div id="diagram" role="group" aria-label="Interactive persistence diagram"></div><p id="diagram-note" class="diagram-note">Run a computation to see its pairs.</p></figure>
             <figure class="diagram-card barcode-card"><figcaption><span>Persistence barcode</span><span class="diagram-legend"><i class="h0"></i>H₀ <i class="h1"></i>H₁ <i class="h2"></i>H₂</span></figcaption><div id="barcode" role="group" aria-label="Persistence barcode"></div><p id="barcode-note" class="diagram-note">Run a computation to see its intervals.</p></figure>
             <div class="interpretation"><strong>What this result says</strong><p id="result-description">Connected components, loops, and higher-dimensional features will appear here after computation.</p></div>
-            <details class="raw-result"><summary>Inspect structured result</summary><button id="copy-result" class="secondary-action" type="button" disabled>Copy JSON</button><pre id="result-json">No result yet.</pre></details>
+            <details class="raw-result"><summary>Inspect structured result</summary><button id="copy-result" class="secondary-action" type="button" disabled>Copy JSON</button><p id="copy-feedback" class="field-feedback" role="status" aria-live="polite" aria-atomic="true"></p><pre id="result-json" tabindex="0" aria-label="Structured result JSON">No result yet.</pre></details>
           </aside>
         </div>
       </section>
@@ -397,6 +397,15 @@ export function mountApp(root: HTMLElement): () => void {
   const activity = element<HTMLParagraphElement>('#activity');
   const computeStatus = element<HTMLElement>('#compute-status');
   const webMcpStatus = element<HTMLElement>('#webmcp-status');
+  const copyFeedback = element<HTMLElement>('#copy-feedback');
+  let copyGeneration = 0;
+  let copyTimer: number | undefined;
+  const resetCopyFeedback = () => {
+    ++copyGeneration;
+    clearTimeout(copyTimer);
+    copyResult.textContent = 'Copy JSON';
+    copyFeedback.textContent = '';
+  };
   const runSimplicial = element<HTMLButtonElement>('#run-simplicial');
   const runCubical = element<HTMLButtonElement>('#run-cubical');
   const metricComponents = element<HTMLElement>('#metric-components');
@@ -456,10 +465,7 @@ export function mountApp(root: HTMLElement): () => void {
     }
     if (mode === 'cubical' && activeSimplicialResult) {
       stopFiltrationAnimation();
-      filtrationRatio = 1;
-      showFiltrationPlayhead = false;
-      syncPointPreview();
-      showIntervals(activeSimplicialResult.persistence.strongestPairs);
+      renderFiltrationPosition(showFiltrationPlayhead);
     }
   };
 
@@ -694,6 +700,7 @@ export function mountApp(root: HTMLElement): () => void {
   const updateResult = (result: ComputeResult | null) => {
     if (result === renderedResult) return;
     renderedResult = result;
+    resetCopyFeedback();
     if (!result) {
       resetFiltration();
       metricComponents.textContent = '—';
@@ -939,13 +946,22 @@ export function mountApp(root: HTMLElement): () => void {
 
   cancelButtons.forEach((button) => button.addEventListener('click', () => tdaRuntime.cancel()));
 
-  copyResult.addEventListener('click', () => {
-    void navigator.clipboard.writeText(resultJson.textContent ?? '').then(() => {
+  copyResult.addEventListener('click', async () => {
+    resetCopyFeedback();
+    const generation = copyGeneration;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(resultJson.textContent ?? '');
+      if (generation !== copyGeneration) return;
       copyResult.textContent = 'Copied';
-      window.setTimeout(() => { copyResult.textContent = 'Copy JSON'; }, 1400);
-    }).catch(() => {
-      copyResult.textContent = 'Select JSON below';
-    });
+      copyFeedback.textContent = 'JSON copied.';
+      copyTimer = window.setTimeout(() => {
+        if (generation === copyGeneration) resetCopyFeedback();
+      }, 1800);
+    } catch {
+      if (generation !== copyGeneration) return;
+      copyFeedback.textContent = 'Couldn’t copy. Select the JSON below to copy it.';
+    }
   });
 
   let lastSyncedRequest: unknown = null;
@@ -1041,6 +1057,7 @@ export function mountApp(root: HTMLElement): () => void {
   void loadSelectedImageSample('donut', { quiet: true });
 
   return () => {
+    resetCopyFeedback();
     stopFiltrationAnimation();
     cleanupDisclosures();
     panelAnimation?.cancel();
