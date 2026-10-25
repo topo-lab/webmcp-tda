@@ -2,7 +2,7 @@
 
 WebMCP TDA is a shared computational-topology workbench for people and their agents. People can explore examples, configure filtrations, upload images, run one-parameter persistent homology, and inspect visual results directly in the page. A WebMCP-aware agent can use the same calculations and update the same visible workspace. Computation stays in the browser through WebAssembly and Web Workers.
 
-Live demo: [webmcp-tda.pages.dev](https://webmcp-tda.pages.dev)
+Live demo: [topolab.ai/webmcp](https://topolab.ai/webmcp/)
 
 ## Human workbench
 
@@ -40,7 +40,7 @@ npm run dev
 
 The repository vendors the browser runtime of `@topolab/tda-wasm` 0.3 and a source-containing package archive built from `tda-viz-react`, so a standalone clone has everything required to install and run (see [Computational backend](#computational-backend)).
 
-Open `http://127.0.0.1:5180`. A standard browser gets the complete visual workbench; a WebMCP-enabled browser also discovers the four tools above.
+Open `http://127.0.0.1:5180`. The production build is served under `/webmcp/` (Vite `base`); `npm run build && npx vite preview` serves it at `http://127.0.0.1:4173/webmcp/`. A standard browser gets the complete visual workbench; a WebMCP-enabled browser also discovers the four tools above.
 
 ```bash
 npm test

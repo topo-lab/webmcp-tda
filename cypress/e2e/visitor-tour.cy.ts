@@ -1,6 +1,7 @@
 // Production smoke test: a visitor's tour of the built site at desktop and phone sizes.
 // Run against `vite preview` of `npm run build`, e.g.
-//   npx cypress run --spec cypress/e2e/visitor-tour.cy.ts --config baseUrl=http://127.0.0.1:4370
+//   npx cypress run --spec cypress/e2e/visitor-tour.cy.ts --config baseUrl=http://127.0.0.1:4173/webmcp
+// The build is served under /webmcp/ (https://topolab.ai/webmcp/), so baseUrl carries that path.
 
 const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },
@@ -57,13 +58,23 @@ function checkSameOriginLinks() {
     const href = ($a[0] as HTMLAnchorElement).href;
     const url = new URL(href);
     if (url.origin !== window.location.origin && url.origin !== new URL(Cypress.config('baseUrl') as string).origin) return;
-    if (url.hash && url.pathname === '/') {
+    const page = new URL(Cypress.config('baseUrl') as string).pathname.replace(/\/?$/, '/');
+    if (url.hash && url.pathname === page) {
       cy.get(url.hash).should('exist');
       return;
     }
     cy.request(href).its('status').should('eq', 200);
   });
 }
+
+describe('Head', () => {
+  it('names https://topolab.ai/webmcp/ as the canonical URL and og:url', () => {
+    cy.visit('/');
+    cy.get('link[rel="canonical"]').should('have.attr', 'href', 'https://topolab.ai/webmcp/');
+    cy.get('meta[property="og:url"]').should('have.attr', 'content', 'https://topolab.ai/webmcp/');
+    cy.get('meta[property="og:image"]').should('have.attr', 'content', 'https://topolab.ai/og-image.png');
+  });
+});
 
 for (const viewport of VIEWPORTS) {
   describe(`Visitor tour at ${viewport.name} (${viewport.width}×${viewport.height})`, () => {
