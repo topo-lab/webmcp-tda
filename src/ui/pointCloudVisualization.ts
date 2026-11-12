@@ -1,4 +1,4 @@
-import { createElement, lazy, Suspense, useMemo } from 'react';
+import { createElement, lazy, Suspense, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { createFiltration } from 'tda-viz-react/filtration';
 import {
@@ -64,6 +64,59 @@ export function normalizePointCloud3D(
   };
 }
 
+function orbitCanvas(canvas: HTMLCanvasElement, dx: number, dy: number): void {
+  const rect = canvas.getBoundingClientRect();
+  const x = rect.left + rect.width / 2;
+  const y = rect.top + rect.height / 2;
+  canvas.dispatchEvent(new MouseEvent('mousedown', { clientX: x, clientY: y, bubbles: true }));
+  window.dispatchEvent(new MouseEvent('mousemove', { clientX: x + dx, clientY: y + dy, bubbles: true }));
+  window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+}
+
+function zoomCanvas(canvas: HTMLCanvasElement, deltaY: number): void {
+  canvas.dispatchEvent(new WheelEvent('wheel', { deltaY, bubbles: true, cancelable: true }));
+}
+
+function bindPointCloudKeys(host: HTMLElement): () => void {
+  let detach = () => {};
+  const bind = () => {
+    detach();
+    const canvas = host.querySelector('canvas');
+    if (!canvas) return;
+    canvas.tabIndex = 0;
+    canvas.setAttribute('aria-label', '3D point cloud');
+    canvas.setAttribute('aria-description', 'Arrow keys orbit. Plus and minus zoom. Reset view restores the camera.');
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'ArrowLeft') orbitCanvas(canvas, 48, 0);
+      else if (event.key === 'ArrowRight') orbitCanvas(canvas, -48, 0);
+      else if (event.key === 'ArrowUp') orbitCanvas(canvas, 0, 48);
+      else if (event.key === 'ArrowDown') orbitCanvas(canvas, 0, -48);
+      else if (event.key === '+' || event.key === '=' || event.key === 'Add') zoomCanvas(canvas, -120);
+      else if (event.key === '-' || event.key === '_' || event.key === 'Subtract') zoomCanvas(canvas, 120);
+      else return;
+      canvas.dataset.keyboardAction = event.key;
+      event.preventDefault();
+    };
+    canvas.addEventListener('keydown', onKeyDown);
+    detach = () => canvas.removeEventListener('keydown', onKeyDown);
+  };
+  bind();
+  const observer = new MutationObserver(bind);
+  observer.observe(host, { childList: true, subtree: true });
+  return () => {
+    observer.disconnect();
+    detach();
+  };
+}
+
+function usePointCloudKeyboard(hostRef: RefObject<HTMLDivElement | null>, epoch: number): void {
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    return bindPointCloudKeys(host);
+  }, [hostRef, epoch]);
+}
+
 const RotatablePointCloud3D = lazy(async () => {
   const [{ Field3D, Nerve3D, PlayCanvasStage, PointCloud3D }, playcanvas] = await Promise.all([
     import('tda-viz-react/3d'),
@@ -79,6 +132,9 @@ const RotatablePointCloud3D = lazy(async () => {
     config?: PointCloud3DFiltration;
     autoRotate: boolean;
   }) {
+    const hostRef = useRef<HTMLDivElement>(null);
+    const [epoch, setEpoch] = useState(0);
+    usePointCloudKeyboard(hostRef, epoch);
     const complex = config?.complex ?? 'rips';
     const simplices = config?.simplices ?? [];
     const scene = useMemo(
@@ -105,10 +161,11 @@ const RotatablePointCloud3D = lazy(async () => {
 
     return createElement(
       'div',
-      { className: 'point-cloud-3d-host', 'data-auto-rotate': autoRotate ? 'true' : 'false' },
+      { ref: hostRef, className: 'point-cloud-3d-host', 'data-auto-rotate': autoRotate ? 'true' : 'false' },
       createElement(
       PlayCanvasStage,
       {
+        key: epoch,
         className: 'point-cloud-3d',
         cameraPosition: [0, 0.15, 3.1],
         clearColor: '#0b2531',
@@ -147,6 +204,11 @@ const RotatablePointCloud3D = lazy(async () => {
         size: 0.045,
       }),
       ),
+      createElement('button', {
+        type: 'button',
+        className: 'point-view-reset',
+        onClick: () => setEpoch((value) => value + 1),
+      }, 'Reset view'),
     );
   }
 

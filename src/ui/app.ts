@@ -6,6 +6,7 @@ import { IMAGE_SAMPLES, loadImageSample, loadImageSource } from '../tda/imageSou
 import { POINT_SAMPLE_IDS, pointSample, type PointSampleId } from '../tda/samples';
 import { binarizeImage, closeBinaryImage, gaussianBlurImage, otsuThreshold, type ForegroundPolarity } from '../tda/imageProcessing';
 import { tdaRuntime } from '../tda/runtime';
+import { trustedHtml } from '../tda/trustedWorker';
 import { formatScale } from '../tda/scale';
 import { PERSISTENCE_FRACTION } from '../tda/summary';
 import { defaultMaximumSimplexDimension, MAX_POINTS, validateSimplicialRequest } from '../tda/validation';
@@ -21,6 +22,7 @@ import type {
   SimplicialResult,
 } from '../tda/types';
 import { bindBarcodeHover, renderBarcode, setBarcodeHighlight } from './barcode';
+import { renderPairTable, renderPointTable } from './dataTable';
 import { createMotionController } from './motion';
 import { cancelPendingDiagramEmphasis, emphasizeDiagramPair, onPersistenceDiagramHover, renderPersistenceDiagram, unmountPersistenceDiagram } from './persistenceDiagram';
 import { mountPointCloudVisualization } from './pointCloudVisualization';
@@ -74,10 +76,6 @@ function element<T extends HTMLElement>(selector: string): T {
   const found = document.querySelector<T>(selector);
   if (!found) throw new Error(`Missing UI element ${selector}.`);
   return found;
-}
-
-function escapeAttribute(value: unknown): string {
-  return String(value).replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }
 
 function drawImage(canvas: HTMLCanvasElement, image: ScalarImage): void {
@@ -215,7 +213,8 @@ export function resultDescription(result: ComputeResult): string {
 }
 
 export function mountApp(root: HTMLElement): () => void {
-  root.innerHTML = `
+  const markup = `
+    <a class="skip-link" href="#top">Skip to main content</a>
     <header class="masthead">
       <a class="wordmark" href="#top" aria-label="WebMCP TDA home">WebMCP TDA</a>
       <nav class="site-nav" aria-label="Primary navigation">
@@ -228,7 +227,7 @@ export function mountApp(root: HTMLElement): () => void {
       </div>
     </header>
 
-    <main id="top">
+    <main id="top" tabindex="-1">
       <section class="hero" aria-labelledby="page-title">
         <div>
           <p class="eyebrow">Persistent homology · entirely in your browser</p>
@@ -253,7 +252,8 @@ export function mountApp(root: HTMLElement): () => void {
 
         <div class="workbench-grid">
           <div class="input-pane">
-            <form id="simplicial-panel" class="input-form" role="tabpanel" aria-labelledby="simplicial-tab" novalidate>
+            <div id="simplicial-panel" role="tabpanel" aria-labelledby="simplicial-tab">
+            <form id="simplicial-form" class="input-form" novalidate>
               <div class="control-grid control-grid--three">
                 <label>Example dataset<select id="point-sample"><option value="circle">Circle · 2D</option><option value="figure-eight">Figure eight · 2D</option><option value="clusters">Two clusters · 2D</option><option value="sphere">Sphere · 3D</option><option value="custom">Custom / agent input</option></select></label>
                 <label>Complex<select id="complex-kind">${WORKBENCH_COMPLEX_KINDS.map((value) => `<option value="${value}">${COMPLEX_LABELS[value]}</option>`).join('')}</select></label>
@@ -270,6 +270,7 @@ export function mountApp(root: HTMLElement): () => void {
                 </div>
                 <div id="point-interaction" class="stage-hint">Drag a point to move it</div>
               </figure>
+              <details class="data-table-disclosure"><summary>Data table<span class="visually-hidden"> of the point cloud</span></summary><table id="point-data"></table></details>
               <div id="filtration-player" class="filtration-player">
                 <button id="toggle-filtration" class="animation-action" type="button" disabled><span aria-hidden="true">▶</span> Play filtration</button>
                 <label><span>Filtration scale</span><input id="filtration-progress" type="range" min="0" max="1000" value="1000" disabled></label>
@@ -284,8 +285,10 @@ export function mountApp(root: HTMLElement): () => void {
                 <p id="point-input-feedback" class="field-feedback">Every point must have two or three coordinates.</p>
               </details>
             </form>
+            </div>
 
-            <form id="cubical-panel" class="input-form" role="tabpanel" aria-labelledby="cubical-tab" novalidate hidden>
+            <div id="cubical-panel" role="tabpanel" aria-labelledby="cubical-tab" hidden>
+            <form id="cubical-form" class="input-form" novalidate>
               <div class="control-grid control-grid--three">
                 <label>Example image<select id="image-sample">${Object.entries(IMAGE_SAMPLES).map(([value, sample]) => `<option value="${value}">${sample.label} photo</option>`).join('')}<option value="custom">Custom / agent image</option></select></label>
                 <label>Filtration<select id="filtration"><option value="sublevel">Sublevel · foreground first</option><option value="superlevel">Superlevel · background first</option></select></label>
@@ -313,6 +316,7 @@ export function mountApp(root: HTMLElement): () => void {
               <div class="run-row"><button id="run-cubical" class="primary-action" type="submit">Compute cubical persistence</button><button id="cancel-cubical" class="secondary-action cancel-compute" type="button" hidden>Cancel</button><p>Image processing runs on your device.</p></div>
               <div class="method-note"><strong>How it works</strong><p>Photo → grayscale → gentle Gaussian denoise → Otsu or manual threshold → small-hole cleanup → binary cubical filtration over F₂. Turn off the mask to use grayscale intensities directly.</p></div>
             </form>
+            </div>
           </div>
 
           <aside class="result-pane" aria-labelledby="result-title">
@@ -324,10 +328,12 @@ export function mountApp(root: HTMLElement): () => void {
               <div title="H₂ classes of a 3D cloud that survive to the computed end, or live at least 20% as long as the longest-lived class of dimension 1 or higher."><span>Voids</span><strong id="metric-voids">—</strong></div>
               <div><span>Runtime</span><strong id="metric-runtime">—</strong></div>
             </div>
-            <figure class="diagram-card"><figcaption><span>Persistence diagram</span><span class="diagram-legend"><i class="h0"></i>H₀ <i class="h1"></i>H₁ <i class="h2"></i>H₂</span></figcaption><div id="diagram" role="group" aria-label="Interactive persistence diagram"></div><p id="diagram-note" class="diagram-note">Run a computation to see its pairs.</p></figure>
+            <figure class="diagram-card"><figcaption><span>Persistence diagram</span><span class="diagram-legend"><i class="h0"></i>H₀ <i class="h1"></i>H₁ <i class="h2"></i>H₂</span></figcaption><div id="diagram" role="group" aria-label="Persistence diagram"></div><p id="diagram-note" class="diagram-note">Run a computation to see its pairs.</p></figure>
+            <details class="data-table-disclosure"><summary>Data table<span class="visually-hidden"> of the persistence diagram</span></summary><table id="diagram-data"></table></details>
             <figure class="diagram-card barcode-card"><figcaption><span>Persistence barcode</span><span class="diagram-legend"><i class="h0"></i>H₀ <i class="h1"></i>H₁ <i class="h2"></i>H₂</span></figcaption><div id="barcode" role="group" aria-label="Persistence barcode"></div><p id="barcode-note" class="diagram-note">Run a computation to see its intervals.</p></figure>
+            <details class="data-table-disclosure"><summary>Data table<span class="visually-hidden"> of the persistence barcode</span></summary><table id="barcode-data"></table></details>
             <div class="interpretation"><strong>What this result says</strong><p id="result-description">Connected components, loops, and higher-dimensional features will appear here after computation.</p></div>
-            <details class="raw-result"><summary>Inspect structured result</summary><button id="copy-result" class="secondary-action" type="button" disabled>Copy JSON</button><p id="copy-feedback" class="field-feedback" role="status" aria-live="polite" aria-atomic="true"></p><pre id="result-json" tabindex="0" aria-label="Structured result JSON">No result yet.</pre></details>
+            <details class="raw-result"><summary>Inspect structured result</summary><button id="copy-result" class="secondary-action" type="button" disabled>Copy JSON</button><p id="copy-feedback" class="field-feedback" role="status" aria-live="polite" aria-atomic="true"></p><pre id="result-json" tabindex="0" role="region" aria-label="Structured result JSON">No result yet.</pre></details>
           </aside>
         </div>
       </section>
@@ -348,10 +354,14 @@ export function mountApp(root: HTMLElement): () => void {
       <details class="credits"><summary>Credits and licences</summary><p id="credits">Credits and licences: persistence is computed by @topolab/tda-wasm (MIT, <a href="licenses/tda-wasm/LICENSE.txt">licence</a>, <a href="licenses/tda-wasm/THIRD_PARTY_LICENSES.txt">third-party notices</a>); point clouds are drawn with tda-viz-react (MIT, <a href="licenses/tda-viz-react/LICENSE.txt">licence</a>). Pretzel photo by Willis Lam, <a href="https://creativecommons.org/licenses/by-sa/2.0/" rel="license noopener" target="_blank">CC BY-SA 2.0</a>; eyeglasses photo by Batholith, public domain; both via <a href="https://commons.wikimedia.org/" rel="noopener" target="_blank">Wikimedia Commons</a>.</p></details>
     </footer>
   `;
+  const parsed = new DOMParser().parseFromString(trustedHtml(markup), 'text/html');
+  root.replaceChildren(...parsed.body.childNodes);
 
   const modeTabs = [...document.querySelectorAll<HTMLButtonElement>('[data-mode]')];
-  const simplicialPanel = element<HTMLFormElement>('#simplicial-panel');
-  const cubicalPanel = element<HTMLFormElement>('#cubical-panel');
+  const simplicialPanel = element<HTMLElement>('#simplicial-panel');
+  const cubicalPanel = element<HTMLElement>('#cubical-panel');
+  const simplicialForm = element<HTMLFormElement>('#simplicial-form');
+  const cubicalForm = element<HTMLFormElement>('#cubical-form');
   const pointsInput = element<HTMLTextAreaElement>('#points-input');
   const pointFeedback = element<HTMLParagraphElement>('#point-input-feedback');
   const pointSampleSelect = element<HTMLSelectElement>('#point-sample');
@@ -389,6 +399,9 @@ export function mountApp(root: HTMLElement): () => void {
   const imageMeta = element<HTMLElement>('#image-meta');
   const diagram = element<HTMLElement>('#diagram');
   const barcode = element<HTMLElement>('#barcode');
+  const pointTable = element<HTMLTableElement>('#point-data');
+  const diagramTable = element<HTMLTableElement>('#diagram-data');
+  const barcodeTable = element<HTMLTableElement>('#barcode-data');
   const barcodeNote = element<HTMLElement>('#barcode-note');
   const pauseMotion = element<HTMLButtonElement>('#pause-motion');
   const resultJson = element<HTMLPreElement>('#result-json');
@@ -441,10 +454,34 @@ export function mountApp(root: HTMLElement): () => void {
     if (highlightedPairId && !pairs.some((pair) => pair.id === highlightedPairId)) highlightedPairId = null;
     renderPersistenceDiagram(diagram, pairs, { playhead });
     renderBarcode(barcode, pairs, { playhead, highlightedId: highlightedPairId });
+    renderPairTable(diagramTable, pairs, 'Persistence diagram');
+    renderPairTable(barcodeTable, pairs, 'Persistence barcode');
     emphasizeDiagramPair(diagram, pairs, highlightedPairId);
   };
 
   const cleanupDisclosures = animateDisclosures(root, () => motion.paused());
+  let coordinateTrigger: HTMLElement | null = null;
+  const rememberCoordinateTrigger = (event: Event) => {
+    const point = event.target instanceof Element ? event.target.closest('[data-testid="tda-point"]') : null;
+    if (point instanceof HTMLElement) coordinateTrigger = point;
+  };
+  document.addEventListener('focusin', rememberCoordinateTrigger, true);
+  const dialogObserver = new MutationObserver(() => {
+    const open = document.body.querySelector('[data-tda-coordinate-editor]') !== null;
+    root.inert = open;
+    if (open || !coordinateTrigger) return;
+    const index = coordinateTrigger.getAttribute('data-point-index');
+    coordinateTrigger = null;
+    if (index === null) return;
+    const restore = () => {
+      document
+        .querySelector<HTMLElement>(`[data-testid="tda-point"][data-point-index="${CSS.escape(index)}"]`)
+        ?.focus();
+    };
+    queueMicrotask(restore);
+    window.setTimeout(restore, 0);
+  });
+  dialogObserver.observe(document.body, { childList: true });
   let selectedMode = 'simplicial';
   let panelAnimation: Animation | null = null;
   const setMode = (mode: 'simplicial' | 'cubical') => {
@@ -537,7 +574,7 @@ export function mountApp(root: HTMLElement): () => void {
     pointAxesButton.setAttribute('aria-pressed', String(showPointAxes));
     pointAxesButton.setAttribute('aria-label', `${showPointAxes ? 'Hide' : 'Show'} axes and ticks`);
     pointInteraction.textContent = dimension === 3
-      ? 'Drag to rotate · scroll to zoom'
+      ? 'Drag to rotate · scroll to zoom · arrow keys orbit · +/− zoom'
       : pointInteractionMode === 'move'
         ? 'Drag a point to move it'
         : 'Select a point to enter x, y';
@@ -579,6 +616,7 @@ export function mountApp(root: HTMLElement): () => void {
   const setPoints = (points: number[][]) => {
     currentPoints = points;
     pointsInput.value = JSON.stringify(points, null, 2);
+    renderPointTable(pointTable, points);
     pointFeedback.textContent = 'Every point must have two or three coordinates.';
     pointFeedback.dataset.status = 'valid';
     pointsInput.setAttribute('aria-invalid', 'false');
@@ -629,15 +667,43 @@ export function mountApp(root: HTMLElement): () => void {
     const fields = PARAMETER_FIELDS[kind];
     parameterHeading.hidden = fields.length === 0;
     parameterFields.hidden = fields.length === 0;
-    parameterFields.innerHTML = fields.map((field) => {
+    parameterFields.replaceChildren(...fields.map((field) => {
+      const label = document.createElement('label');
+      label.append(field.label);
       const value = defaults[field.key] ?? '';
-      const control = field.options
-        ? `<select data-parameter="${field.key}">${field.options.map((option) => `<option value="${option.value}" ${String(value) === option.value ? 'selected' : ''}>${option.label}</option>`).join('')}</select>`
-        : `<input data-parameter="${field.key}" type="number" value="${escapeAttribute(value)}" ${field.min === undefined ? '' : `min="${field.min}"`} ${field.max === undefined ? '' : `max="${field.max}"`} step="${field.step ?? 'any'}">`;
-      return `<label>${field.label}${control}<small>${field.help}</small></label>`;
-    }).join('');
+      if (field.options) {
+        const select = document.createElement('select');
+        select.dataset.parameter = field.key;
+        for (const option of field.options) {
+          const choice = document.createElement('option');
+          choice.value = option.value;
+          choice.textContent = option.label;
+          choice.selected = String(value) === option.value;
+          select.append(choice);
+        }
+        label.append(select);
+      } else {
+        const input = document.createElement('input');
+        input.dataset.parameter = field.key;
+        input.type = 'number';
+        input.value = String(value);
+        if (field.min !== undefined) input.min = String(field.min);
+        if (field.max !== undefined) input.max = String(field.max);
+        input.step = String(field.step ?? 'any');
+        label.append(input);
+      }
+      const help = document.createElement('small');
+      help.textContent = field.help;
+      label.append(help);
+      return label;
+    }));
     const capability = CAPABILITIES.simplicialComplexes.find((entry) => entry.id === kind)!;
-    complexNote.innerHTML = `<strong>${capability.filtrationUnits}</strong> · ${capability.note}${capability.status === 'experimental' ? ' Experimental in tda-wasm 0.3.' : ''}`;
+    const units = document.createElement('strong');
+    units.textContent = capability.filtrationUnits;
+    complexNote.replaceChildren(
+      units,
+      document.createTextNode(` · ${capability.note}${capability.status === 'experimental' ? ' Experimental in tda-wasm 0.3.' : ''}`),
+    );
   };
 
   const applyParameterValues = (parameters: ComplexParameters = {}) => {
@@ -910,7 +976,7 @@ export function mountApp(root: HTMLElement): () => void {
     resultPane.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
   };
 
-  simplicialPanel.addEventListener('submit', (event) => {
+  simplicialForm.addEventListener('submit', (event) => {
     event.preventDefault();
     if (getWorkspaceState().status === 'computing') return;
     revealOnResult = true;
@@ -929,7 +995,7 @@ export function mountApp(root: HTMLElement): () => void {
     }
   });
 
-  cubicalPanel.addEventListener('submit', (event) => {
+  cubicalForm.addEventListener('submit', (event) => {
     event.preventDefault();
     if (getWorkspaceState().status === 'computing' || imageLoading) return;
     revealOnResult = true;
@@ -1060,6 +1126,9 @@ export function mountApp(root: HTMLElement): () => void {
     resetCopyFeedback();
     stopFiltrationAnimation();
     cleanupDisclosures();
+    dialogObserver.disconnect();
+    document.removeEventListener('focusin', rememberCoordinateTrigger, true);
+    root.inert = false;
     panelAnimation?.cancel();
     unsubscribeMotion();
     motion.destroy();

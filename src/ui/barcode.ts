@@ -102,12 +102,16 @@ export function buildBarcode(pairs: readonly SerializablePair[], options: Barcod
   };
 }
 
-function escapeHtml(value: string): string {
-  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
-}
-
 function percentText(value: number): string {
   return `${Number(value.toFixed(4))}%`;
+}
+
+function playheadNode(percent: number | null): HTMLSpanElement | null {
+  if (percent === null) return null;
+  const node = document.createElement('span');
+  node.className = 'barcode-playhead';
+  node.style.left = percentText(percent);
+  return node;
 }
 
 interface BarcodeRenderState {
@@ -142,23 +146,71 @@ export function renderBarcode(container: HTMLElement, pairs: readonly Serializab
   if (figure.empty) {
     container.dataset.empty = 'true';
     container.dataset.hasHighlight = 'false';
-    container.innerHTML = '<p class="barcode-empty">No intervals to show.</p>';
+    const empty = document.createElement('p');
+    empty.className = 'barcode-empty';
+    empty.textContent = 'No intervals to show.';
+    container.replaceChildren(empty);
     return;
   }
   container.dataset.empty = 'false';
-  const playhead = figure.playheadPercent === null
-    ? ''
-    : `<span class="barcode-playhead" style="left:${percentText(figure.playheadPercent)}"></span>`;
-  const bands = figure.bands.map((band) => {
-    const intervals = band.intervals.map((interval) => `
-      <button type="button" class="barcode-interval" data-pair-id="${escapeHtml(interval.id)}" data-dimension="${interval.dimension}" data-essential="${interval.essential ? 'true' : 'false'}" data-active="${interval.active ? 'true' : 'false'}" aria-label="${escapeHtml(interval.label)}" style="--x:${percentText(interval.xPercent)};--w:${percentText(interval.widthPercent)}">
-        <span class="barcode-interval-bar" style="background:${band.color}"></span>
-        ${interval.essential ? '<span class="barcode-essential" aria-hidden="true">∞</span>' : ''}
-      </button>`).join('');
-    return `<div class="barcode-band"><span class="barcode-band-label">${band.label}</span><div class="barcode-lanes">${intervals}${playhead}</div></div>`;
-  }).join('');
-  const ticks = figure.ticks.map((tick) => `<span>${escapeHtml(formatFiltration(tick))}</span>`).join('');
-  container.innerHTML = `<div class="barcode-scroll">${bands}</div><div class="barcode-axis" aria-hidden="true"><span class="barcode-axis-spacer"></span><div class="barcode-axis-track">${ticks}${playhead}</div></div>`;
+  const scroll = document.createElement('div');
+  scroll.className = 'barcode-scroll';
+  scroll.tabIndex = 0;
+  scroll.setAttribute('role', 'region');
+  scroll.setAttribute('aria-label', 'Persistence barcode intervals');
+  for (const band of figure.bands) {
+    const bandEl = document.createElement('div');
+    bandEl.className = 'barcode-band';
+    const label = document.createElement('span');
+    label.className = 'barcode-band-label';
+    label.textContent = band.label;
+    const lanes = document.createElement('div');
+    lanes.className = 'barcode-lanes';
+    for (const interval of band.intervals) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'barcode-interval';
+      button.dataset.pairId = interval.id;
+      button.dataset.dimension = String(interval.dimension);
+      button.dataset.essential = interval.essential ? 'true' : 'false';
+      button.dataset.active = interval.active ? 'true' : 'false';
+      button.setAttribute('aria-label', interval.label);
+      button.style.setProperty('--x', percentText(interval.xPercent));
+      button.style.setProperty('--w', percentText(interval.widthPercent));
+      const bar = document.createElement('span');
+      bar.className = 'barcode-interval-bar';
+      bar.style.background = band.color;
+      button.append(bar);
+      if (interval.essential) {
+        const essential = document.createElement('span');
+        essential.className = 'barcode-essential';
+        essential.setAttribute('aria-hidden', 'true');
+        essential.textContent = '∞';
+        button.append(essential);
+      }
+      lanes.append(button);
+    }
+    const bandPlayhead = playheadNode(figure.playheadPercent);
+    if (bandPlayhead) lanes.append(bandPlayhead);
+    bandEl.append(label, lanes);
+    scroll.append(bandEl);
+  }
+  const axis = document.createElement('div');
+  axis.className = 'barcode-axis';
+  axis.setAttribute('aria-hidden', 'true');
+  const spacer = document.createElement('span');
+  spacer.className = 'barcode-axis-spacer';
+  const track = document.createElement('div');
+  track.className = 'barcode-axis-track';
+  for (const tick of figure.ticks) {
+    const tickLabel = document.createElement('span');
+    tickLabel.textContent = formatFiltration(tick);
+    track.append(tickLabel);
+  }
+  const axisPlayhead = playheadNode(figure.playheadPercent);
+  if (axisPlayhead) track.append(axisPlayhead);
+  axis.append(spacer, track);
+  container.replaceChildren(scroll, axis);
   setBarcodeHighlight(container, highlightedId);
 }
 
